@@ -41,6 +41,8 @@ Every item's change history is public, so we read it the way Interlock's "How di
 | HUDI Resolved → Closed | 35 | |
 | SDAP To Do → WontFix | 33 | |
 
+**What it does to a project's reports.** In MXNET, **333 of the 1,093 items its filters call unresolved are finished work (30%)**; in HUDI, 348 of 3,401 (10%). Every backlog count, burn-down and "open issues" dashboard over those projects is wrong by that much (counted Nov 2, 2026).
+
 This is the pattern Interlock proves from configuration: a transition into a done status that does not set a resolution, used by many people for years, each use adding one more miscounted item.
 
 **Apache, open but still resolved (1,239 items).** This side is mostly not routes: 1,100 of the last steps have no author (BEAM's 637 "Resolved → Triage Needed" and Lucene's 379 are system changes after both projects moved to GitHub Issues in 2022), and 29 items have no status change. The rest were people, and the clearest route among them is the classic one: **a reopen from Closed that keeps the old resolution**, 25 times in GEODE ([GEODE-9489](https://issues.apache.org/jira/browse/GEODE-9489)) and 14 in IGNITE ([IGNITE-7537](https://issues.apache.org/jira/browse/IGNITE-7537)), by 31 different people.

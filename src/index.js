@@ -136,8 +136,14 @@ export async function measure(site, report) {
   })).count;
   // Interlock's own replay items: the ones it recorded, and any older ones found by their summary (a positive
   // phrase search; Jira's negated text search is unreliable, so they are excluded by key instead)
-  const found = await jira(route`/rest/api/3/search/jql`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jql: 'summary ~ "\\"Interlock replay\\""', maxResults: 100, fields: ['summary'] }) }).catch(() => null);
+  const found = { issues: [] };
+  for (let token, n = 0; n < 5; n++) {
+    const page = await jira(route`/rest/api/3/search/jql`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jql: 'summary ~ "\\"Interlock replay\\""', maxResults: 100, fields: ['summary'], ...(token ? { nextPageToken: token } : {}) }) }).catch(() => null);
+    found.issues.push(...(page?.issues || []));
+    if (!page?.nextPageToken) break;
+    token = page.nextPageToken;
+  }
   const recorded = (await kvs.get('replays').catch(() => null)) || [];
   const ours = [...new Set([...recorded, ...((found?.issues || []).filter((i) => /^Interlock replay:/.test(i.fields?.summary || '')).map((i) => i.key))])]
     .filter((k) => /^[A-Z][A-Z0-9_]+-\d+$/.test(k)).slice(0, 500);
@@ -591,7 +597,7 @@ resolver.define('fix', async (req) => {
     }
   } else throw new Error('Interlock can repair resolution findings automatically; other findings need a person to redesign the workflow.');
   if (!changed.length) return { changed, note: property === 'openResolved'
-    ? 'Nothing to change: every transition back to this status from a done status already clears the resolution.'
+    ? 'Nothing to change here: work reaches this status still resolved through an earlier open status. Fix the status that finished work is first reopened to, and this one clears with it.'
     : 'Nothing to change: every transition into this status already sets the resolution or asks the person for one.' };
   // statuses go back with their descriptions, or the update would blank them site-wide
   const statuses = st.map((s) => ({ id: s.id, name: s.name, description: s.description || '', statusCategory: s.statusCategory, statusReference: s.id }));
@@ -616,6 +622,13 @@ resolver.define('fix', async (req) => {
 export const handler = resolver.getDefinitions();
 
 // ---------- tools for agents (Rovo actions, exposed over MCP) ----------
+
+// the workflows a partial name could mean, for the agent to ask about
+const candidates = (site, name) => {
+  const q = String(name || '').trim().toLowerCase();
+  const some = q ? site.workflows.filter((w) => w.name.toLowerCase().includes(q)).slice(0, 8).map((w) => w.name) : [];
+  return some.length ? `, for example: ${some.join('; ')}` : '';
+};
 
 // exact name first; otherwise a part of the name that matches exactly one workflow (never a guess)
 const findWorkflow = (site, name) => {
@@ -666,7 +679,7 @@ async function checkWorkflowsInner(payload) {
 async function getWorkflowFindingsInner(payload) {
   const site = await loadSite();
   const w = findWorkflow(site, payload?.workflow);
-  if (!w) return { error: `No single workflow matches "${payload?.workflow}". Give its full name.` };
+  if (!w) return { error: `No single workflow matches "${payload?.workflow}". Give its full name${candidates(site, payload?.workflow)}.` };
   const r = (await agentReport({ ...site, workflows: [w] })).results[0];
   return { workflow: w.name, statuses: r.statuses, transitions: r.transitions, reachableStates: r.states, propertiesThatHold: r.held, findings: r.findings.map((f) => ({ ...brief(f), why: f.why })) };
 }
@@ -675,7 +688,7 @@ async function getWorkflowFindingsInner(payload) {
 async function proveRouteInner(payload) {
   const site = await loadSite();
   const w = findWorkflow(site, payload?.workflow);
-  if (!w) return { error: `No workflow matches "${payload?.workflow}".` };
+  if (!w) return { error: `No single workflow matches "${payload?.workflow}"${candidates(site, payload?.workflow)}. Give its full name.` };
   const statuses = new Map(Object.entries(site.statuses));
   const byName = (n) => w.statuses.map((s) => s.statusReference).find((id) => statuses.get(id)?.name.toLowerCase() === String(n || '').trim().toLowerCase());
   const target = byName(payload.target), via = byName(payload.through);

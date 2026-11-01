@@ -143,6 +143,19 @@ test('a screen Interlock cannot read never invents a reopened-but-resolved findi
   assert.deepEqual(verify(w, statuses, { unreadableScreens: new Set(['77']) }).findings, []);
 });
 
+test('rules whose required status is done, or whose target is open, are not broken by reopening', () => {
+  const w = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '4', { actions: setRes }), tr('4', 'Reopen', ['4'], '5', { actions: clearRes })], ['1', '2', '3', '4', '5']);
+  // "Stuck only through Done": every route to Stuck passes Done
+  assert.deepEqual(verify(w, statuses, { mustPass: [{ target: '5', via: '4' }] }).findings.filter((f) => f.property === 'mustPass'), []);
+});
+
+test('an unreadable screen into a done status never invents a reopened-but-resolved finding', () => {
+  const finish = tr('2', 'Finish', ['2'], '4', { transitionScreen: { parameters: { screenId: '88' } } });
+  const w = wf([tr('1', 'Start', ['1'], '2'), finish, tr('3', 'Reopen', ['4'], '2')], ['1', '2', '4']);
+  const props = verify(w, statuses, { unreadableScreens: new Set(['88']) }).findings.map((f) => f.property);
+  assert.ok(!props.includes('openResolved'));
+});
+
 // ---------- the history trace ----------
 import { lastStatusChange, waysOf } from '../engine/trace.mjs';
 const h = (created, ...items) => ({ created, items });

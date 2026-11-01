@@ -246,3 +246,7 @@ button, select { font: inherit; color: inherit; }
 
 .il-notice.error { background: var(--ds-background-danger, #ffeceb); color: var(--ds-text-danger, #ae2e24); }
 .il-notice .il-link + .il-link { margin-left: 8px; }
+
+.il-lever .live.left { background: color-mix(in srgb, var(--il-amber) 30%, transparent); color: var(--il-text); }
+
+.il-diagram-wrap.fit { overflow: auto; }

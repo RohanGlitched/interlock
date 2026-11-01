@@ -28,7 +28,7 @@ export default function App() {
       setReport(r);
       setMeasuring(true);
       invoke('measureSite', {}).then((m) => setReport((cur) => (cur && cur.checkedAt === r.checkedAt ? withCounts(cur, m) : cur))).catch(() => {}).finally(() => setMeasuring(false));
-      const live = (x) => Object.values(x.observed || {}).reduce((b, o) => b + o.bad, 0);
+      const live = rankScore;
       const worst = [...r.results].sort((a, b) => live(b) - live(a) || b.findings.length - a.findings.length)[0];
       setSelId((id) => id || worst?.workflow.id);
     }).catch((e) => setError(e.message || String(e)));
@@ -83,7 +83,7 @@ export default function App() {
   const counted = results.some((r) => r.observed);
   const [rankedWithCounts, setRankedWithCounts] = useState(false);
   useEffect(() => {
-    const live = (r) => Object.values(r.observed || {}).reduce((b, o) => b + o.bad, 0);
+    const live = rankScore;
     const order = () => [...results].sort((a, b) => live(b) - live(a) || b.findings.length - a.findings.length || a.workflow.name.localeCompare(b.workflow.name)).map((x) => x.workflow.id);
     if (results.length && !frozen) setFrozen(order());
     else if (counted && !rankedWithCounts && !touched) { setFrozen(order()); setRankedWithCounts(true); }
@@ -96,7 +96,13 @@ export default function App() {
   const sel = results.find((r) => r.workflow.id === selId) || results[0];
   const model = { ...report.models[sel.workflow.id], teamManaged: sel.teamManaged };
   const totals = summarise(results);
-  const liveOf = (r) => Object.entries(r.observed || {}).filter(([p]) => r.findings.some((f) => f.property === p)).reduce((b, [, o]) => b + o.bad, 0);
+  // the red badge counts work items in a status a proved route leads to (the finding's own); items left over in
+  // statuses no route reaches today get a quieter amber badge
+  const countsOf = (r) => Object.entries(r.observed || {}).filter(([p]) => r.findings.some((f) => f.property === p)).reduce((acc, [p, o]) => {
+    const own = o.byStatus ? r.findings.filter((f) => f.property === p).reduce((t, f) => t + (o.byStatus[f.subject] || 0), 0) : o.bad;
+    return { own: acc.own + own, left: acc.left + (o.bad - own) };
+  }, { own: 0, left: 0 });
+  const liveOf = (r) => countsOf(r).own * 1e6 + countsOf(r).left; // ranks by explained items first
   const ranked = [...results].sort((a, b) => liveOf(b) - liveOf(a) || b.findings.length - a.findings.length || a.workflow.name.localeCompare(b.workflow.name));
   const list = (frozen ? [...results].sort((a, b) => (frozen.indexOf(a.workflow.id) + 1 || 1e9) - (frozen.indexOf(b.workflow.id) + 1 || 1e9)) : ranked)
     .filter((r) => filter === 'all' || !totals.withFindings || r.findings.length);
@@ -115,7 +121,7 @@ export default function App() {
         <div className={`il-notice ${notice.error ? 'error' : ''}`} role={notice.error ? 'alert' : 'status'}><Lamp state={notice.error ? 'red' : 'green'} />{notice.msg}
           {notice.undo && <button className="il-link" onClick={async () => {
             const u = notice.undo; setNotice({ msg: 'Taking the fix back and proving the site again…' });
-            try { await invoke('fix', { ...u, mode: 'undo' }); await recheck(`Undone: ${u.transitions.join(', ')} in ${u.name} no longer ${u.transitions.length === 1 ? 'changes' : 'change'} the resolution.`); }
+            try { const out = await invoke('fix', { ...u, mode: 'undo' }); if (!out?.applied) throw new Error((out?.errors || []).join(' ') || out?.note || 'Jira did not accept the change'); await recheck(`Undone: ${u.transitions.join(', ')} in ${u.name} no longer ${u.transitions.length === 1 ? 'changes' : 'change'} the resolution.`); }
             catch (e) { setNotice({ msg: 'Could not undo the fix: ' + (e.message || e), error: true }); }
           }}>Undo</button>}
           <button className="il-link" onClick={() => setNotice(null)}>Dismiss</button>
@@ -136,7 +142,8 @@ export default function App() {
                 <button aria-current={r.workflow.id === sel.workflow.id ? 'true' : undefined} className={`il-lever ${r.workflow.id === sel.workflow.id ? 'pulled' : ''}`} onClick={() => { setSelId(r.workflow.id); setFocus(null); setTouched(true); if (!frozen) setFrozen(ranked.map((x) => x.workflow.id)); }}>
                   <span className="handle" aria-hidden="true" />
                   <LeverName name={r.workflow.name} />
-                  <span className="count">{liveOf(r) ? <span className="live" title={`${liveOf(r)} work items already in a wrong state`}>{liveOf(r)}<span className="sr"> work items already wrong,</span></span> : null}{r.findings.length ? <span title={`${r.findings.length} ${r.findings.length === 1 ? 'finding' : 'findings'}`}><Lamp state="red" />{r.findings.length}<span className="sr"> {r.findings.length === 1 ? 'finding' : 'findings'}</span></span> : <><Lamp state="green" /><span className="sr">no findings</span></>}</span>
+                  <span className="count">{(() => { const n = countsOf(r); return n.own ? <span className="live" title={`${n.own} work items already in the state a proved route leads to`}>{n.own}<span className="sr"> work items already wrong,</span></span>
+                    : n.left ? <span className="live left" title={`${n.left} work items left over in statuses no route reaches today`}>{n.left}<span className="sr"> work items left over,</span></span> : null; })()}{r.findings.length ? <span title={`${r.findings.length} ${r.findings.length === 1 ? 'finding' : 'findings'}`}><Lamp state="red" />{r.findings.length}<span className="sr"> {r.findings.length === 1 ? 'finding' : 'findings'}</span></span> : <><Lamp state="green" /><span className="sr">no findings</span></>}</span>
                 </button>
               </li>
             ))}
@@ -150,7 +157,7 @@ export default function App() {
         <Table key={sel.workflow.id} result={sel} model={model} focus={focus} setFocus={setFocus} replays={replays} setReplays={setReplays} onFixed={recheck} onIntended={markIntended}
           fixes={Object.values(report.fixes || {}).filter((x) => x.workflowId === sel.workflow.id)} onUndoFix={async (fx) => {
             setNotice({ msg: 'Taking the fix back and proving the site again…' });
-            try { await invoke('fix', { workflowId: sel.workflow.id, property: fx.property, status: fx.status, mode: 'undo' }); await recheck(`Undone: ${fx.transitions.join(', ')} in ${fx.name} are back as they were.`); }
+            try { const out = await invoke('fix', { workflowId: sel.workflow.id, property: fx.property, status: fx.status, mode: 'undo' }); if (!out?.applied) throw new Error((out?.errors || []).join(' ') || out?.note || 'Jira did not accept the change'); await recheck(`Undone: ${fx.transitions.join(', ')} in ${fx.name} are back as they were.`); }
             catch (e) { setNotice({ msg: 'Could not undo the fix: ' + (e.message || e), error: true }); }
           }}
           rules={rules[sel.workflow.id] || []} setRules={(r) => { setRules((x) => ({ ...x, [sel.workflow.id]: r })); invoke('saveRules', { workflowId: sel.workflow.id, rules: r }).catch((e) => setNotice({ msg: 'The rule is proved here but was not saved: ' + (e.message || e), error: true })); }} />
@@ -159,14 +166,22 @@ export default function App() {
   );
 }
 
+// Workflows are ranked by work items a proved route explains, then by items left over, then by findings.
+function rankScore(r) {
+  return Object.entries(r.observed || {}).filter(([p]) => r.findings.some((f) => f.property === p)).reduce((acc, [p, o]) => {
+    const own = o.byStatus ? r.findings.filter((f) => f.property === p).reduce((t, f) => t + (o.byStatus[f.subject] || 0), 0) : o.bad;
+    return acc + own * 1e6 + (o.bad - own);
+  }, 0);
+}
+
 function withCounts(report, counts) {
   return { ...report, results: report.results.map((r) => (counts[r.workflow.id] ? { ...r, ...counts[r.workflow.id] } : r)) };
 }
 
 function summarise(results) {
-  const live = results.reduce((a, r) => a + Object.values(r.observed || {}).reduce((b, o) => b + o.bad, 0), 0);
+  const live = results.reduce((a, r) => a + Object.entries(r.observed || {}).filter(([p]) => r.findings.some((f) => f.property === p)).reduce((b, [, o]) => b + o.bad, 0), 0);
   // of those, the ones in a status a proved route reaches in that bad state today
-  const onRoute = results.reduce((a, r) => a + Object.entries(r.observed || {}).reduce((b, [p, o]) => {
+  const onRoute = results.reduce((a, r) => a + Object.entries(r.observed || {}).filter(([p]) => r.findings.some((f) => f.property === p)).reduce((b, [p, o]) => {
     if (!o.byStatus) return b + o.bad;
     const statuses = new Set(r.findings.filter((f) => f.property === p).map((f) => f.subject));
     return b + Object.entries(o.byStatus).filter(([s]) => statuses.has(s)).reduce((t, [, n]) => t + n, 0);
@@ -276,7 +291,7 @@ function Diagram({ model, result, focus }) {
         <button onClick={() => setZoom((z) => Math.min(4, z + 0.5))} aria-label="Zoom in">+</button>
       </div>
       <svg className={`il-diagram ${route.length ? 'focused' : ''}`} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet"
-        style={zoom > 1 ? { width: width * fitScale * zoom, height: height * fitScale * zoom } : { maxHeight: height * 1.7, maxWidth: width * 1.7 }} role="img" aria-label={`Track diagram of ${result.workflow.name}`}>
+        style={zoom > 1 ? { width: width * fitScale * zoom, height: height * fitScale * zoom } : { maxHeight: height * 1.7, maxWidth: width * 1.7, minWidth: width * 0.8 }} role="img" aria-label={`Track diagram of ${result.workflow.name}`}>
         <defs>
           <filter id="il-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.4" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
         </defs>
@@ -370,6 +385,7 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
                 <span><b>{f.title}</b>{list.length === 1 ? f.subject : `${list.length} statuses`}</span>
               </button>
               <Tiers f={f} obs={result.observed?.[property]} statuses={list.map((x) => x.subject)} verdict={verdict} />
+              {result.observedError && (property === 'doneUnresolved' || property === 'openResolved') && <p className="il-evidence none">Jira could not count the work items: {result.observedError}</p>}
               <Evidence obs={result.observed?.[property]} property={property} flagged={list.map((x) => x.subject)} fixAt={fixFor(property)?.at} />
               {list.length > 1 && (
                 <div className="il-chips" role="group" aria-label={f.title}>
