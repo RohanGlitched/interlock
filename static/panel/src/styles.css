@@ -318,6 +318,10 @@ button, select { font: inherit; color: inherit; }
 .il-hop rect { fill: var(--il-panel-block); stroke: var(--il-lit-red); stroke-width: 1.2; fill-opacity: 1; }
 
 /* copies of one workflow with the same findings: one lever, the copies on demand */
-.il-copies { display: block; margin: -2px 14px 6px 41px; padding: 0; border: 0; background: none; color: var(--il-lit-amber); font-size: 11.5px; font-weight: 600; cursor: pointer; text-align: left; }
+.il-copies { display: inline-block; margin: -4px 14px 6px 41px; padding: 1px 7px; border: 1px solid rgba(230, 236, 228, 0.3); border-radius: 2px; background: none; color: var(--il-panel-ink); font-size: 11px; font-weight: 700; cursor: pointer; }
+.il-copies:hover { background: rgba(230, 236, 228, 0.1); }
 .il-members { list-style: none; margin: 0 0 6px; padding: 0 0 0 18px; border-left: 2px solid rgba(230, 236, 228, 0.12); margin-left: 20px; }
 .il-lever.member { padding-top: 4px; padding-bottom: 4px; }
+
+.il-lamp.off { background: #4a574e; box-shadow: none; }
+@media (max-width: 1100px) { .il-tiers { flex-wrap: wrap; margin-left: 12px; } }

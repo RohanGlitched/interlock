@@ -1,7 +1,7 @@
 import Resolver from '@forge/resolver';
 import api, { route, assumeTrustedRoute } from '@forge/api';
 import { kvs } from '@forge/kvs';
-import { verify, buildModel, reopenSteps } from '../engine/interlock.mjs';
+import { verify, buildModel, reopenSteps, ruleVerdict } from '../engine/interlock.mjs';
 import { resolutionFor } from '../engine/resolution.mjs';
 import { waysOf } from '../engine/trace.mjs';
 
@@ -721,8 +721,8 @@ async function proveRouteInner(payload) {
   if (!target || !via) return { error: `Use status names from this workflow: ${w.statuses.map((s) => statuses.get(s.statusReference)?.name).join(', ')}.` };
   if (target === via) return { error: 'The status to reach and the status to pass through are the same; name two different statuses.' };
   const r = checkSite({ ...site, workflows: [w] }, { [w.id]: [{ target, via }] }).results[0];
-  if (r.noInitial) return { ruleHolds: null, answer: `${w.name} has no create transition, so there is no route to search; Interlock cannot say either way.` };
-  if (r.findings.some((x) => x.property === 'unreachable' && String(x.status) === String(target))) return { ruleHolds: null, unreachable: true, answer: `No route reaches ${payload.target} at all in ${w.name}, so the question does not arise. (That is a finding of its own: a status nothing can reach.)` };
+  const v = ruleVerdict(buildModel(w, statuses, { screenHasResolution: new Set(site.screenHasResolution), unreadableScreens: new Set(site.unreadableScreenIds || []) }), { target, via });
+  if (v.verdict === 'undecided') return { ruleHolds: null, answer: `Interlock cannot say for ${w.name}: ${v.reason}.` };
   const f = r.findings.find((x) => x.property === 'mustPass');
   // `ruleHolds` is about the rule "every route to target passes through"; the answer sentence states the
   // finding plainly so it reads right whichever way the user phrased the question.

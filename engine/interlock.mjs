@@ -323,3 +323,15 @@ export function reopenSteps(transitions, cat, target, all) {
     && fromOf(t).some((f) => cat[f] === 'DONE') && !clears(t)
     && !(t.actions || []).some((a) => a.ruleKey === 'system:update-field' && a.parameters?.field === 'resolution' && a.parameters.value));
 }
+
+// The verdict on one rule, "work reaches target only through via": holds, broken (with the route), or undecided (with
+// the reason: no create transition, a status the rule names is gone, or nothing reaches the target at all).
+export function ruleVerdict(model, { target, via }) {
+  const name = new Map(model.statuses.map((s) => [s.id, s.name]));
+  if (!model.initial) return { verdict: 'undecided', reason: 'the workflow has no create transition, so there is no route to search' };
+  if (!name.has(target) || !name.has(via)) return { verdict: 'undecided', reason: 'a status this rule names is no longer in the workflow' };
+  if (String(target) === String(via)) return { verdict: 'undecided', reason: 'the rule names the same status twice' };
+  if (![...explore(model).values()].some((n) => n.s === target)) return { verdict: 'undecided', reason: `no route reaches ${name.get(target)} at all` };
+  const { seen, hit } = exploreRule(model, target, via);
+  return hit ? { verdict: 'broken', route: routeTo(seen, hit, model) } : { verdict: 'holds' };
+}

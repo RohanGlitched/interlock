@@ -1,7 +1,7 @@
 // Unit tests for the workflow model checker. Run with: npm test
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { verify, buildModel, usableBySomeone, reopenSteps } from '../engine/interlock.mjs';
+import { verify, buildModel, usableBySomeone, reopenSteps, ruleVerdict } from '../engine/interlock.mjs';
 import { resolutionFor } from '../engine/resolution.mjs';
 
 const statuses = new Map([
@@ -234,6 +234,18 @@ test('rules: work created straight into the target has not passed the required s
   const st = new Map([['1', { name: 'Triage', category: 'TODO' }], ['2', { name: 'Backlog', category: 'TODO' }], ['4', { name: 'Done', category: 'DONE' }]]);
   const w = wf([tr('1', 'Accept', ['1'], '2'), tr('2', 'Finish', ['2'], '4', { actions: setRes })], ['1', '2', '4']);
   assert.equal(verify(w, st, { mustPass: [{ target: '1', via: '2' }] }).findings.filter((f) => f.property === 'mustPass').length, 1);
+});
+
+test('a rule verdict is holds, broken or undecided, never a vacuous holds', () => {
+  const w = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '4', { actions: setRes }), tr('5', 'Shortcut', ['2'], '4', { actions: setRes })]);
+  const m = buildModel(w, statuses);
+  assert.equal(ruleVerdict(m, { target: '4', via: '3' }).verdict, 'broken');
+  assert.equal(ruleVerdict(buildModel(wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '4', { actions: setRes })]), statuses), { target: '4', via: '3' }).verdict, 'holds');
+  assert.equal(ruleVerdict(m, { target: '4', via: '99' }).verdict, 'undecided');
+  const unreached = buildModel(wf([tr('1', 'Start', ['1'], '2')]), statuses);
+  assert.match(ruleVerdict(unreached, { target: '4', via: '3' }).reason, /no route reaches/);
+  const noStart = buildModel({ id: 'w', name: 'W', statuses: [{ statusReference: '1' }, { statusReference: '4' }], transitions: [tr('2', 'Finish', ['1'], '4')] }, statuses);
+  assert.equal(ruleVerdict(noStart, { target: '4', via: '1' }).verdict, 'undecided');
 });
 
 // ---------- the history trace ----------

@@ -3,7 +3,7 @@
 // each with the exact route, which can be replayed on a real work item to prove it.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke, openIssue, openPath } from './bridge.js';
-import { check, explore, PROPERTIES } from '../../../engine/interlock.mjs';
+import { check, explore, PROPERTIES, ruleVerdict } from '../../../engine/interlock.mjs';
 import { layout, tracks, trackPath, globalPath, BLOCK_W, BLOCK_H } from './layout.js';
 
 const reduceMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -179,7 +179,7 @@ export default function App() {
               return (
                 <li key={g.key}>
                   {lever(g.members[0])}
-                  {g.members.length > 1 && <button className="il-copies" aria-expanded={open} onClick={() => setOpenGroups((o) => ({ ...o, [g.key]: !open }))}>{open ? 'Hide the copies' : `Same findings in ${g.members.length} copies: show each`}</button>}
+                  {g.members.length > 1 && <button className="il-copies" aria-expanded={open} aria-label={`${open ? 'Hide' : 'Show'} the ${g.members.length} copies with the same findings`} onClick={() => setOpenGroups((o) => ({ ...o, [g.key]: !open }))}>{open ? '▾' : '▸'} {g.members.length} copies</button>}
                   {g.members.length > 1 && open && <ul className="il-members">{g.members.map((x) => <li key={x.workflow.id}>{lever(x, true)}</li>)}</ul>}
                 </li>
               );
@@ -282,7 +282,7 @@ function LeverName({ name, usage = [], copies = 0 }) {
   return (
     <span className="name" title={`${name}${projects.length ? ` (used in ${projects.join(', ')})` : ''}`}>
       {plate && <b className="proj">{plate}{projects.length > 1 ? ` +${projects.length - 1}` : ''}</b>}
-      {rest}{jsm && <i className="tag">JSM</i>}{copies > 1 && <i className="tag">×{copies}</i>}
+      {rest}{jsm && <i className="tag">JSM</i>}
     </span>
   );
 }
@@ -373,6 +373,8 @@ function Diagram({ model, result, focus }) {
     setHopLabels(out);
   }, [focus, width, height, vertical]); // eslint-disable-line react-hooks/exhaustive-deps
   const labelSize = Math.min(18, Math.max(11, 12 / (fitScale * zoom)));
+  // status names at about 11 px on screen or more, whatever the scale (wrapped to fit their block)
+  const statusSize = Math.min(17, Math.max(13, 11 / (fitScale * zoom)));
   const globals = model.transitions.filter((t) => t.type === 'GLOBAL');
   return (
     <div ref={wrapRef} className={`il-diagram-wrap ${zoom > 1 ? 'zoomed' : 'fit'} ${vertical ? 'vertical' : ''}`}>
@@ -407,13 +409,13 @@ function Diagram({ model, result, focus }) {
           );
         })}
         {model.statuses.map((s) => {
-          const p = pos.get(s.id), state = focusSet ? (focusSet.has(s.id) ? 'red' : unreachable.has(s.id) ? 'amber' : 'off') : bad.has(s.id) ? 'red' : unreachable.has(s.id) ? 'amber' : 'green';
+          const p = pos.get(s.id), state = unreachable.has(s.id) ? 'amber' : focusSet ? (focusSet.has(s.id) ? 'red' : s.id === model.initial ? 'green' : 'off') : bad.has(s.id) ? 'red' : 'green';
           const i = order.get(s.id) ?? 30;
           return (
             <g key={s.id} className={`il-block ${s.category.toLowerCase()} ${state} ${onRoute.has(s.id) ? 'onroute' : ''}`} transform={`translate(${p.x},${p.y})`} style={{ '--t': `${i * 90}ms` }}>
               <rect width={BLOCK_W} height={BLOCK_H} rx="5" />
               <circle className="lamp" cx="16" cy={BLOCK_H / 2} r="6" />
-              <StatusLabel name={s.name} />
+              <StatusLabel name={s.name} size={statusSize} />
               {s.id === model.initial && <text className="start" x="0" y="-8">Created here</text>}
             </g>
           );
@@ -435,25 +437,33 @@ function Diagram({ model, result, focus }) {
           );
         })}
       </svg>
-      <Legend teamManaged={result.teamManaged} />
+      <Legend teamManaged={result.teamManaged} focused={!!focusSet} />
     </div>
   );
 }
 
 // A status name on its block: one line when it fits, two lines split at a space when it does not
-function StatusLabel({ name }) {
-  if (name.length <= 19) return <text x="30" y={BLOCK_H / 2 + 5}>{name}</text>;
-  const cut = name.lastIndexOf(' ', 19) > 6 ? name.lastIndexOf(' ', 19) : 19;
+function StatusLabel({ name, size = 13 }) {
+  const per = Math.max(10, Math.floor(19 * 13 / size)); // characters a line holds at this size
+  if (name.length <= per) return <text x="30" y={BLOCK_H / 2 + size * 0.38} style={{ fontSize: size }}>{name}</text>;
+  const cut = name.lastIndexOf(' ', per) > 4 ? name.lastIndexOf(' ', per) : per;
   const a = name.slice(0, cut).trim(), rest = name.slice(cut).trim();
-  const b = rest.length > 19 ? rest.slice(0, 18) + '…' : rest;
-  return <text x="30" y={BLOCK_H / 2 - 2} className="two"><tspan x="30">{a}</tspan><tspan x="30" dy="13">{b}</tspan><title>{name}</title></text>;
+  const b = rest.length > per ? rest.slice(0, per - 1) + '…' : rest;
+  const fs = size * 0.9;
+  return <text x="30" y={BLOCK_H / 2 - fs * 0.2} className="two" style={{ fontSize: fs }}><tspan x="30">{a}</tspan><tspan x="30" dy={fs * 1.05}>{b}</tspan><title>{name}</title></text>;
 }
 
-function Legend({ teamManaged }) {
+function Legend({ teamManaged, focused }) {
   return (
     <p className="il-legend">
-      <span><Lamp state="green" />Every route from here is sound</span>
-      <span><Lamp state="red" />A route reaches this status in a bad state</span>
+      {focused ? <>
+        <span><Lamp state="red" />The statuses this finding is about</span>
+        <span><span className="il-lamp off" />Not part of it</span>
+        <span><Lamp state="green" />Where work is created</span>
+      </> : <>
+        <span><Lamp state="green" />Every route from here is sound</span>
+        <span><Lamp state="red" />A route reaches this status in a bad state</span>
+      </>}
       <span><Lamp state="amber" />No route reaches this status</span>
       {teamManaged && <span className="tm">Team-managed: Jira keeps the resolution in step with done statuses itself.</span>}
     </p>
@@ -776,10 +786,11 @@ function Rules({ model, rules, setRules, findings = [], onShow }) {
         );
       })()}
       {rules.map((r, i) => {
-        const f = brokenBy(r);
+        const f = brokenBy(r), v = ruleVerdict(model, r);
         return (
-          <p key={i} className="il-rule"><Lamp state={f ? 'red' : 'green'} /> Work reaches <b>{name(model, r.target)}</b> only through <b>{name(model, r.via)}</b>:{' '}
-            {f ? <><b className="il-live">broken</b> <button className="il-link" onClick={() => onShow?.(f)}>Show the route</button></> : <b>holds on every route</b>}{' '}
+          <p key={i} className="il-rule"><Lamp state={f || v.verdict === 'broken' ? 'red' : v.verdict === 'undecided' ? 'amber' : 'green'} /> Work reaches <b>{name(model, r.target)}</b> only through <b>{name(model, r.via)}</b>:{' '}
+            {f ? <><b className="il-live">broken</b> <button className="il-link" onClick={() => onShow?.(f)}>Show the route</button></>
+              : v.verdict === 'undecided' ? <b>cannot say: {v.reason}</b> : <b>holds on every route</b>}{' '}
             <button className="il-link" onClick={() => setRules(rules.filter((_, j) => j !== i))}>Remove</button></p>
         );
       })}
