@@ -72,8 +72,8 @@ button, select { font: inherit; color: inherit; }
   radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.06), transparent 60%),
   linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 28px 28px,
   linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 28px 28px, var(--il-panel); }
-.il-diagram-wrap { padding: 24px; }
-.il-diagram { display: block; overflow: visible; width: 100%; height: auto; }
+.il-diagram-wrap { padding: 24px; min-height: 100%; display: flex; flex-direction: column; justify-content: safe center; }
+.il-diagram { display: block; overflow: visible; width: 100%; height: auto; margin: 0 auto; }
 .il-rail { stroke: var(--il-panel-track); stroke-width: 2; stroke-dasharray: 2 5; opacity: 0.7; }
 .il-rail-label { font-size: 11px; fill: var(--il-panel-ink); opacity: 0.65; font-weight: 600; }
 .il-track { fill: none; stroke: var(--il-panel-track); stroke-width: 3; opacity: 0.85; stroke-linecap: round; }
@@ -164,11 +164,11 @@ button, select { font: inherit; color: inherit; }
 
 .il-suggest { font-size: 13px; color: var(--il-subtle); margin: 0 0 10px; }
 
-/* evidence tiers: three small signal heads, each lamp lit white as a finding is proved, seen in data, then replayed */
+/* evidence tiers: three lamps, lit red as a finding is proved, seen in data, then replayed */
 .il-tiers { display: flex; flex-wrap: wrap; gap: 4px 12px; list-style: none; margin: -4px 12px 8px 33px; padding: 0; font-size: 12px; color: var(--il-subtle); }
 .il-tiers li { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .il-tiers li.on { color: var(--il-text); font-weight: 600; }
 .il-tiers li.na { opacity: 0.4; }
-.il-tiers .il-lamp { width: 8px; height: 8px; background: #46524b; box-shadow: 0 0 0 3px var(--il-panel); margin: 3px; }
-.il-tiers .il-lamp.white { background: radial-gradient(circle at 35% 35%, #fff, #dfe8e2 70%); box-shadow: 0 0 0 3px var(--il-panel), 0 0 6px 3px rgba(255, 255, 255, 0.55); }
+.il-tiers .il-lamp { width: 10px; height: 10px; background: transparent; box-shadow: inset 0 0 0 1.5px var(--il-off); }
+.il-tiers .il-lamp.white { background: radial-gradient(circle at 35% 35%, #ff9b8f, var(--il-red) 60%); box-shadow: 0 0 6px rgba(201, 58, 46, 0.55); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

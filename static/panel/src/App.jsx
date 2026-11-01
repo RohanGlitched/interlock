@@ -176,7 +176,7 @@ function Diagram({ model, result, focus }) {
   const globals = model.transitions.filter((t) => t.type === 'GLOBAL');
   return (
     <div className="il-diagram-wrap">
-      <svg className="il-diagram" viewBox={`0 0 ${width} ${height}`} style={{ maxWidth: width, minWidth: Math.min(width, 380) }} role="img" aria-label={`Track diagram of ${result.workflow.name}`}>
+      <svg className="il-diagram" viewBox={`0 0 ${width} ${height}`} style={{ maxWidth: width * (width < 900 ? 1.7 : 1), minWidth: Math.min(width, 380) }} role="img" aria-label={`Track diagram of ${result.workflow.name}`}>
         <defs>
           <filter id="il-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.4" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
         </defs>
