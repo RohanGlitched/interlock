@@ -19,6 +19,8 @@ Railway signal boxes solved this a century ago with interlocking: the frame phys
 
 Each finding comes with the shortest route that breaks the property, from creation, transition by transition.
 
+Most of those findings come from Jira's own built-in templates, copied unchanged into every project that uses them. One was confirmed on a real work item: in the Change Management template, a declined change sent back to Review stays resolved as Done. The full list is in [Defects in Jira's built-in workflow templates](docs/atlassian-templates.md).
+
 ## Evidence, in three steps
 
 A proof says what *can* happen. Interlock then takes each finding as far as it can go:

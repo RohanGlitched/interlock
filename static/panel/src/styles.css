@@ -186,3 +186,5 @@ button, select { font: inherit; color: inherit; }
 .il-watch ul { list-style: none; margin: 0; padding: 0; }
 .il-watch ul li { display: flex; gap: 8px; align-items: baseline; padding: 1px 0; }
 .il-watch ul li .il-lamp { width: 8px; height: 8px; flex: none; transform: translateY(1px); }
+
+.il-replay-act { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 8px 0 0; }

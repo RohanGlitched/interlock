@@ -187,6 +187,10 @@ resolver.define('checkSite', async (req) => {
   // the proof comes back first; live counts follow in a second call (measureSite) so the page paints fast
   const report = checkSite(site, req.payload?.rules || {});
   report.watch = await recordProof(report, req.context.accountId).catch(() => null);
+  // a compact line per workflow with findings, so a proof can be audited from the app's logs
+  console.log('INTERLOCK_REPORT ' + JSON.stringify(report.results.filter((r) => r.findings.length).map((r) => ({
+    w: r.workflow.name, p: [...new Set(r.usage.map((u) => u.project))], f: r.findings.map((f) => `${f.property}:${f.subject || ''}`),
+  }))));
   // the UI draws each workflow, so it gets the models too (statuses and transitions only)
   const statuses = new Map(Object.entries(site.statuses));
   report.models = Object.fromEntries(site.workflows.map((w) => [w.id, buildModel(w, statuses, { screenHasResolution: new Set(site.screenHasResolution) })]));
@@ -223,19 +227,31 @@ resolver.define('replay', async (req) => {
     const i = await jira(route`/rest/api/3/issue/${created.key}?fields=status,resolution`);
     return { status: i.fields.status.name, category: i.fields.status.statusCategory.key, resolution: i.fields.resolution?.name || null };
   };
+  // mark the item as Interlock's own with an app property (labels can be rewritten by automation rules)
+  await jira(route`/rest/api/3/issue/${created.key}/properties/interlock-replay`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ replay: true, at: new Date().toISOString() }),
+  }).catch(() => {});
   steps.push({ step: 'Created', ...(await read()) });
   // a work item that starts somewhere else is on a different workflow: stop rather than prove the wrong thing
   if (startName && steps[0].status !== startName) {
     return { key: created.key, steps: [...steps, { step: 'Check the workflow', error: `${created.key} started in ${steps[0].status}, not ${startName}, so it follows a different workflow` }] };
   }
   for (const h of hops) {
-    const avail = await jira(route`/rest/api/3/issue/${created.key}/transitions`);
+    const avail = await jira(route`/rest/api/3/issue/${created.key}/transitions?expand=transitions.fields`);
     // match by name and where it leads; transition ids repeat across workflows
     const t = avail.transitions.find((x) => x.name === h.transition && x.to?.name === h.toName)
       || avail.transitions.find((x) => x.name === h.transition);
     if (!t) { steps.push({ step: h.transition, error: 'This transition is not available to you on the replay item' }); break; }
+    // where the transition screen asks for a resolution and the route expects one, choose it the way a
+    // person filling in the screen would (Done when offered, else the first resolution offered)
+    const body = { transition: { id: t.id } };
+    const res = t.fields?.resolution;
+    if (h.resolution && res?.allowedValues?.length) {
+      const pick = res.allowedValues.find((v) => v.name === 'Done') || res.allowedValues[0];
+      body.fields = { resolution: { id: pick.id } };
+    }
     await jira(route`/rest/api/3/issue/${created.key}/transitions`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transition: { id: t.id } }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     }).catch((e) => steps.push({ step: h.transition, error: e.message }));
     if (steps.at(-1)?.error) break;
     steps.push({ step: h.transition, ...(await read()) });
@@ -248,8 +264,9 @@ resolver.define('replay', async (req) => {
 resolver.define('deleteReplay', async (req) => {
   const key = String(req.payload.key || '');
   if (!/^[A-Z][A-Z0-9_]+-\d+$/.test(key)) throw new Error('Not a work item key');
-  const i = await jira(route`/rest/api/3/issue/${key}?fields=summary,labels`);
-  if (!i.fields.labels?.includes('interlock-replay') || !i.fields.summary?.startsWith('Interlock replay:')) {
+  const i = await jira(route`/rest/api/3/issue/${key}?fields=summary,labels&properties=interlock-replay`);
+  const ours = i.properties?.['interlock-replay']?.replay || i.fields.labels?.includes('interlock-replay');
+  if (!ours || !i.fields.summary?.startsWith('Interlock replay:')) {
     throw new Error(`${key} was not created by an Interlock replay, so Interlock will not delete it`);
   }
   await jira(route`/rest/api/3/issue/${key}`, { method: 'DELETE' });

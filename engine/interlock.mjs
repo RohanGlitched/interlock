@@ -24,7 +24,7 @@ export function buildModel(workflow, statuses, { screenHasResolution = new Set()
   const transitions = [];
   for (const t of workflow.transitions) {
     if (t.type === 'INITIAL') { initial = t.toStatusReference; continue; }
-    const from = t.type === 'GLOBAL' ? ids.filter((s) => s !== t.toStatusReference || true) : (t.links || []).map((l) => l.fromStatusReference).filter(Boolean);
+    const from = t.type === 'GLOBAL' ? ids : (t.links || []).map((l) => l.fromStatusReference).filter(Boolean);
     let resolution = null; // 'set' | 'clear' | null (unchanged)
     for (const a of t.actions || []) {
       if (a.ruleKey === 'system:update-field' && a.parameters?.field === RES_FIELD) resolution = a.parameters.value ? 'set' : 'clear';
@@ -110,8 +110,6 @@ export function check(model, { mustPass = [] } = {}) {
   }
   if (hasDone) {
     // which states can still reach a done status? (reverse reachability over the explored graph)
-    const edges = new Map();
-    for (const [k, n] of states) if (n.prev) { if (!edges.has(k)) edges.set(k, []); }
     const canFinish = new Set(states.filter(([, n]) => cat.get(n.s) === 'DONE').map(([k]) => k));
     for (let grew = true; grew;) {
       grew = false;
