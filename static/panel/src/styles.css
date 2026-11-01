@@ -289,3 +289,6 @@ button, select { font: inherit; color: inherit; }
 .il-route { border-left-color: var(--il-red); }
 .il-lever .tag { margin-left: 6px; padding: 0 4px; border-radius: 2px; background: rgba(230, 236, 228, 0.14); font-style: normal; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; vertical-align: 1px; }
 .il-lever-key { flex-wrap: nowrap; white-space: nowrap; font-size: 10.5px; }
+
+.il-confirm { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--il-border); border-radius: 3px; background: var(--il-surface); font-size: 13px; }
+.il-confirm p { margin: 0 0 8px; }

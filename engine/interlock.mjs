@@ -9,7 +9,7 @@ export const PROPERTIES = {
   openResolved: { title: 'Reopened but still resolved', why: 'A route leaves a done status without clearing the resolution, so open work counts as resolved and keeps its old resolved date.' },
   unreachable: { title: 'Status nobody can reach', why: 'No route from creation leads to this status.' },
   nobody: { title: 'Transition nobody can use', why: 'Its conditions allow no user, role, group or permission, so the button never appears.' },
-  mustPass: { title: 'Route skips a required status', why: 'Work can reach the target without passing the status your rule requires, either the first time or after it is reopened.' },
+  mustPass: { title: 'Route skips a required status', why: 'Work can reach the target without passing the status your rule requires (for a done target, also after finished work is reopened and finished again).' },
   ruleStale: { title: 'Rule names a status this workflow no longer has', why: 'The rule was saved for a status that has since been removed from the workflow, so it proves nothing. Remove it or save it again.' },
   approvalSkipped: { title: 'Done without approval', why: 'This workflow asks for an approval, but a route reaches a successful done status without passing any approval step, so work can be completed without anyone approving it.' },
 };
@@ -153,9 +153,9 @@ function exploreApproval(model, approvals) {
   const name = new Map(model.statuses.map((s) => [s.id, s.name]));
   const cat = new Map(model.statuses.map((s) => [s.id, s.category]));
   const usable = model.transitions.filter(usableBySomeone);
-  const k3 = (s, r, a) => `${s}|${r ? 1 : 0}|${a ? 1 : 0}`;
-  const seen = new Map([[k3(model.initial, false, false), { s: model.initial, r: false, a: false, prev: null, via: null }]]);
-  const queue = [{ s: model.initial, r: false, a: false }];
+  const k3 = (s, r, a) => `${s}|${r ? 1 : 0}|${a || 0}`;
+  const seen = new Map([[k3(model.initial, false, 0), { s: model.initial, r: false, a: 0, prev: null, via: null }]]);
+  const queue = [{ s: model.initial, r: false, a: 0 }];
   // when the workflow does not name the approve transition: one named like an approval, if the step has one;
   // otherwise a move forward (not back to a to-do status, nor to a status the approval step is reached from)
   const approveIds = new Map(), before = new Map();
@@ -184,10 +184,14 @@ function exploreApproval(model, approvals) {
       // one, a directed transition to a positive outcome; a "from any status" transition never approves);
       // work that leaves a done status for an open one needs approving again
       const reopened = cat.get(cur.s) === 'DONE' && cat.get(t.to) !== 'DONE';
-      // work closed as cancelled, declined... needs no approval, and moving it on to another done status
-      // (Canceled to Closed) does not make it a success; reopening it does
-      const settled = cat.get(t.to) === 'DONE' && NEGATIVE.test(name.get(t.to) || '');
-      const a = (cur.a && !reopened) || settled || (from ? approves(from, t) : false);
+      // a: 0 not approved, 1 approved, 2 settled. Work closed as cancelled, declined... needs no approval (settled),
+      // and filing it away (Canceled to Closed or Archived) keeps it settled; moving it on to any other done status
+      // (Completed, Done) is a success that still needs the approval, and reopening it needs one too
+      const negativeDone = cat.get(t.to) === 'DONE' && NEGATIVE.test(name.get(t.to) || '');
+      const filed = cat.get(t.to) === 'DONE' && /clos|archiv/i.test(name.get(t.to) || '');
+      const a = from && approves(from, t) ? 1
+        : cur.a === 1 && !reopened ? 1
+        : negativeDone || (cur.a === 2 && filed) ? 2 : 0;
       const k = k3(t.to, r, a);
       if (seen.has(k)) continue;
       seen.set(k, { s: t.to, r, a, prev: k3(cur.s, cur.r, cur.a), via: t });
@@ -294,7 +298,7 @@ export function verify(workflow, statuses, opts = {}) {
   }
   // a property only "holds" where it applies: approval coverage needs an approval step to cover
   const hasApproval = model.statuses.some((s) => s.approval);
-  const held = !model.initial ? [] : Object.keys(PROPERTIES).filter((p) => p !== 'mustPass' && (p !== 'approvalSkipped' || hasApproval) && !findings.some((f) => f.property === p) && !undecided.includes(p));
+  const held = !model.initial ? [] : Object.keys(PROPERTIES).filter((p) => p !== 'mustPass' && (p !== 'ruleStale' || (opts.mustPass || []).length) && (p !== 'approvalSkipped' || hasApproval) && !findings.some((f) => f.property === p) && !undecided.includes(p));
   return { workflow: { id: model.id, name: model.name }, statuses: model.statuses.length, transitions: model.transitions.length, states, findings, held, undecided, ...(model.initial ? {} : { noInitial: true }) };
 }
 

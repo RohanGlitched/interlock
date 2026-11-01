@@ -573,7 +573,7 @@ resolver.define('fix', async (req) => {
   const cat = Object.fromEntries(st.map((s) => [s.id, s.statusCategory]));
   const changed = [];
   let resolutionName = null;
-  const caveats = [];
+  const caveats = [], fromDone = [];
   const before = {}; // each changed transition's actions before the fix, so Undo can put them back exactly
   if (mode === 'undo') {
     if (!record) throw new Error('Interlock has no record of this fix, so it cannot take it back.');
@@ -593,7 +593,7 @@ resolver.define('fix', async (req) => {
       const sets = (t.actions || []).some((a) => RES_ACTION(a) && a.parameters.value);
       if (sets) continue;
       const from = t.type === 'GLOBAL' ? all.filter((s) => s !== status) : (t.links || []).map((l) => l.fromStatusReference);
-      if (from.length && from.every((f) => cat[f] === 'DONE')) continue;
+      if (from.length && from.every((f) => cat[f] === 'DONE')) { fromDone.push(...from.map((f) => st.find((s) => s.id === f)?.name).filter(Boolean)); continue; }
       if (await screenAsksResolution(t.transitionScreen?.parameters?.screenId)) continue;
       if (from.some((f) => cat[f] === 'DONE')) caveats.push(`"${t.name}" also runs from a done status, where it would replace an existing resolution with ${done.name}`);
       before[t.id] = t.actions || [];
@@ -621,6 +621,7 @@ resolver.define('fix', async (req) => {
   if (!changed.length) return { changed, note: property === 'openResolved'
     ? (setters.length ? `Nothing for Interlock to change: ${setters.join(', ')} ${setters.length === 1 ? 'sets' : 'set'} a resolution on work that is not done. Remove that from the transition in the workflow editor if it is not intended.`
       : 'Nothing for Interlock to change: the resolution comes from a screen or from when the work item was created. Check the Resolution field on the create, edit and transition screens.')
+    : fromDone.length ? `Nothing to change here: work reaches this status only from ${[...new Set(fromDone)].join(', ')}. Fix that status first; this one clears with it.`
     : 'Nothing to change: every transition into this status already sets the resolution or asks the person for one.' };
   // statuses go back with their descriptions, or the update would blank them site-wide
   const statuses = st.map((s) => ({ id: s.id, name: s.name, description: s.description || '', statusCategory: s.statusCategory, statusReference: s.id }));

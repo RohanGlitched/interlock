@@ -176,7 +176,9 @@ export default function App() {
           {!totals.withFindings && !results.some((r) => r.workflow.name === 'Ship: Software delivery workflow') ? (
             <div className="il-clear">
               <Lamp state="green" />
-              <h2>All {results.length.toLocaleString()} workflows hold, in every reachable state</h2>
+              <h2>{results.some((r) => r.undecided?.length || r.noInitial)
+                ? `No workflow has a route that goes wrong; ${results.filter((r) => r.undecided?.length || r.noInitial).length} could not be fully decided`
+                : `All ${results.length.toLocaleString()} workflows hold, in every reachable state`}</h2>
               <p>No route leaves work done but unresolved, reopened but still resolved, stranded, or past an approval. To see what Interlock does when one does, add a small software project whose workflow has the shortcuts teams add over time.</p>
               <Demo primary onDone={async (msg) => { setTouched(true); await recheck(msg); setPendingSelect('Ship: Software delivery workflow'); }} />
             </div>
@@ -187,7 +189,7 @@ export default function App() {
         <Table key={sel.workflow.id} result={sel} model={model} focus={focus} setFocus={(f) => { setTouched(true); setFocus(f); }} replays={replays} setReplays={setReplays} onFixed={recheck} onIntended={markIntended}
           fixes={Object.values(report.fixes || {}).filter((x) => x.workflowId === sel.workflow.id)} onUndoFix={async (fx) => {
             setNotice({ msg: 'Taking the fix back and proving the site again…' });
-            try { const out = await invoke('fix', { workflowId: sel.workflow.id, property: fx.property, status: fx.status, mode: 'undo' }); if (!out?.applied) throw new Error((out?.errors || []).join(' ') || out?.note || 'Jira did not accept the change'); await recheck(`Undone: ${fx.transitions.join(', ')} in ${fx.name} are back as they were.`); }
+            try { const out = await invoke('fix', { workflowId: sel.workflow.id, property: fx.property, status: fx.status, mode: 'undo' }); if (!out?.applied) throw new Error((out?.errors || []).join(' ') || out?.note || 'Jira did not accept the change'); await recheck(out.note ? `Undone: ${out.note}` : `Undone: ${fx.transitions.join(', ')} in ${fx.name} are back as they were.`); }
             catch (e) { setNotice({ msg: 'Could not undo the fix: ' + (e.message || e), error: true }); }
           }}
           rules={rules[sel.workflow.id] || []} setRules={(r) => { setRules((x) => ({ ...x, [sel.workflow.id]: r })); invoke('saveRules', { workflowId: sel.workflow.id, rules: r }).catch((e) => setNotice({ msg: 'The rule is proved here but was not saved: ' + (e.message || e), error: true })); }} />
@@ -480,7 +482,7 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
                     </ol>
                   )}
                   {f.route && usage && (!rp || rp.status === 'error') && (
-                    <button className="il-btn primary" onClick={() => replay(f)}>Replay on a new work item in {usage.project}</button>
+                    <ReplayButton project={usage.project} onGo={() => replay(f)} />
                   )}
                   {f.route && !usage && <p className="il-note">No company-managed project uses this workflow, so there is nowhere to replay it.</p>}
                   {rp?.status === 'running' && <p className="il-note">Replaying through Jira…</p>}
@@ -691,6 +693,19 @@ function verdictOf(f, rp) {
     return { confirmed: ok, text: ok ? ` ${rp.key} is open in ${last.status} but still resolved as ${last.resolution}.` : ' Jira cleared the resolution, so this route is safe.' };
   }
   return { confirmed: true, text: ` ${rp.key} followed the route to ${last.status}.` };
+}
+
+// Replay creates a real work item and moves it through Jira: one more click, with what that means said first.
+function ReplayButton({ project, onGo }) {
+  const [asking, setAsking] = useState(false);
+  if (!asking) return <button className="il-btn primary" onClick={() => setAsking(true)}>Replay on a new work item in {project}</button>;
+  return (
+    <div className="il-confirm" role="group" aria-label="Confirm the replay">
+      <p>This creates a real work item in <b>{project}</b> and moves it along the route. Notifications and automation in {project} may run on it. You can delete it here afterwards.</p>
+      <button className="il-btn primary" onClick={() => { setAsking(false); onGo(); }}>Create it and replay</button>{' '}
+      <button className="il-link" onClick={() => setAsking(false)}>Cancel</button>
+    </div>
+  );
 }
 
 // A route that is there on purpose (a pre-approved standard change, an admin-only shortcut) can be recorded

@@ -213,6 +213,13 @@ test('approvals: cancelled work closed later is not a skip; sending work back is
   assert.deepEqual(props([...base, tr('6', 'Back to draft', ['2'], '1'), tr('7', 'Close draft', ['1'], '5')]), ['Closed']);
 });
 
+test('approvals: cancelled work moved on to a successful done status still needs the approval', () => {
+  const st = new Map([['1', { name: 'Open', category: 'TODO' }], ['2', { name: 'Awaiting approval', category: 'IN_PROGRESS' }], ['3', { name: 'Canceled', category: 'DONE' }], ['4', { name: 'Completed', category: 'DONE' }]]);
+  const w = wf([tr('1', 'Submit', ['1'], '2'), tr('2', 'Approve', ['2'], '4'), tr('3', 'Cancel', ['1'], '3'), tr('4', 'Mark completed', ['3'], '4')], ['1', '2', '3', '4']);
+  const ww = { ...w, statuses: w.statuses.map((s) => (s.statusReference === '2' ? { ...s, properties: { 'approval.groups': 'true' } } : s)) };
+  assert.deepEqual(verify(ww, st).findings.filter((f) => f.property === 'approvalSkipped').map((f) => f.subject), ['Completed']);
+});
+
 // ---------- the history trace ----------
 import { lastStatusChange, waysOf } from '../engine/trace.mjs';
 const h = (created, ...items) => ({ created, items });
