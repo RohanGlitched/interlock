@@ -181,12 +181,12 @@ export default function App() {
               <h2>{results.some((r) => r.undecided?.length || r.noInitial)
                 ? `No workflow has a route that goes wrong; ${results.filter((r) => r.undecided?.length || r.noInitial).length} could not be fully decided`
                 : `All ${results.length.toLocaleString()} workflows hold, in every reachable state`}</h2>
-              <p>No route leaves work done but unresolved, reopened but still resolved, stranded, or past an approval. To see what Interlock does when one does, add a small software project whose workflow has the shortcuts teams add over time.</p>
+              <p>{results.some((r) => r.undecided?.length || r.noInitial) ? 'Some properties depend on a transition screen Interlock cannot read, or a workflow has no create transition; those are named on each workflow. ' : ''}{results.some((r) => r.intended?.length) ? 'Routes recorded as intended are listed on their workflows. ' : ''}No other route leaves work done but unresolved, reopened but still resolved, stranded, or past an approval. To see what Interlock does when one does, add a small software project whose workflow has the shortcuts teams add over time.</p>
               <Demo primary onDone={async (msg) => { setTouched(true); await recheck(msg); setPendingSelect('Ship: Software delivery workflow'); }} />
             </div>
           ) : report.models[sel.workflow.id]
             ? <Diagram key={sel.workflow.id} model={model} result={sel} focus={focus} />
-            : <div className="il-empty small"><p>This site has so many workflows that Interlock sends diagrams only for the ones with findings. {sel.workflow.name} has none: every property holds for every reachable state.</p></div>}
+            : <div className="il-empty small"><p>This site has so many workflows that Interlock sends diagrams only for the ones with findings. {sel.workflow.name} has none{sel.undecided?.length || sel.noInitial ? '; some of its properties could not be decided (see the table)' : ': every property holds for every reachable state'}.</p></div>}
         </main>
         <Table key={sel.workflow.id} result={sel} model={model} focus={focus} setFocus={(f) => { setTouched(true); setFocus(f); }} replays={replays} setReplays={setReplays} onFixed={recheck} onIntended={markIntended}
           fixes={Object.values(report.fixes || {}).filter((x) => x.workflowId === sel.workflow.id)} onUndoFix={async (fx) => {

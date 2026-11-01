@@ -124,7 +124,8 @@ function exploreRule(model, target, via) {
   const start = { s: model.initial, r: false, p: model.initial === via };
   const seen = new Map([[k3(start.s, start.r, start.p), { ...start, prev: null, via: null }]]);
   const queue = [start];
-  let hit = null;
+  // work created straight into the target has not passed the required status
+  let hit = start.s === target && !start.p ? k3(start.s, start.r, start.p) : null;
   while (queue.length && !hit) {
     const cur = queue.shift();
     for (const t of usable) {

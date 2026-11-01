@@ -230,6 +230,12 @@ test('approvals: "Disapprove" is not the approval; a workflow with no done statu
   assert.ok(out.undecided.includes('stranded') && !out.held.includes('stranded'));
 });
 
+test('rules: work created straight into the target has not passed the required status', () => {
+  const st = new Map([['1', { name: 'Triage', category: 'TODO' }], ['2', { name: 'Backlog', category: 'TODO' }], ['4', { name: 'Done', category: 'DONE' }]]);
+  const w = wf([tr('1', 'Accept', ['1'], '2'), tr('2', 'Finish', ['2'], '4', { actions: setRes })], ['1', '2', '4']);
+  assert.equal(verify(w, st, { mustPass: [{ target: '1', via: '2' }] }).findings.filter((f) => f.property === 'mustPass').length, 1);
+});
+
 // ---------- the history trace ----------
 import { lastStatusChange, waysOf } from '../engine/trace.mjs';
 const h = (created, ...items) => ({ created, items });
