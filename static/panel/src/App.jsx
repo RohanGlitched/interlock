@@ -21,6 +21,7 @@ export default function App() {
   // once someone picks a workflow the list stops reordering, so counts arriving never move a lever away
   // from under the pointer; a new check unfreezes it
   const [frozen, setFrozen] = useState(null);
+  const [touched, setTouched] = useState(false);
 
   const run = (fresh = false) => {
     setReport(null); setError(null); setFrozen(null); setTouched(false); setRankedWithCounts(false); setFocus(null); setNotice(null);
@@ -74,6 +75,17 @@ export default function App() {
       return { ...r, findings: all.filter((f) => !isIntended(f)), intended: all.filter(isIntended).map((f) => ({ ...f, record: isIntended(f) })) };
     });
   }, [report, rules, intended]);
+  const [autoStage, setAutoStage] = useState(null);
+  useEffect(() => {
+    if (!report || !results.length || touched) return;
+    const stage = `${report.checkedAt}|${results.some((r) => r.observed)}`;
+    if (autoStage === stage) return;
+    setAutoStage(stage);
+    const pick = [...results].sort((a, b) => rankScore(b) - rankScore(a) || b.findings.length - a.findings.length || a.workflow.name.localeCompare(b.workflow.name))[0];
+    if (!pick?.findings.length) return;
+    setSelId(pick.workflow.id);
+    setFocus(worstFinding(pick));
+  }, [report, results, touched, autoStage]); // eslint-disable-line react-hooks/exhaustive-deps
   const markIntended = async (r, f, reason, undo = false) => {
     const out = await invoke('markIntended', { workflowId: r.workflow.id, property: f.property, subject: f.subject, reason, undo });
     setIntended(out.intended || {});
@@ -83,7 +95,6 @@ export default function App() {
   // add their badges without moving anything under the pointer
   // until someone picks a workflow, the order follows the evidence: once the live counts arrive, the
   // workflows with work items already wrong move to the top (once); after a pick it holds still
-  const [touched, setTouched] = useState(false);
   const counted = results.some((r) => r.observed);
   const [rankedWithCounts, setRankedWithCounts] = useState(false);
   useEffect(() => {
@@ -114,10 +125,15 @@ export default function App() {
   return (
     <div className="il-app">
       <header className="il-head">
-        <div className="il-brand"><Lamp state="green" /><h1 className="sr">Interlock</h1></div>
+        <div className="il-brand"><Lamp state={totals.withFindings ? 'red' : 'green'} /><h1>Interlock</h1></div>
+        <dl className="il-board">
+          <div><dt>workflows proved</dt><dd>{results.length.toLocaleString()}</dd></div>
+          <div className={totals.withFindings ? 'bad' : 'good'}><dt>{totals.withFindings === 1 ? 'has routes that go wrong' : 'have routes that go wrong'}</dt><dd>{totals.withFindings.toLocaleString()}</dd></div>
+          <div className={totals.live ? 'bad' : ''}><dt>work items already wrong</dt><dd>{totals.live ? totals.live.toLocaleString() : measuring ? '…' : '0'}</dd></div>
+        </dl>
         <p className="il-summary">
-          Checked {plural(results.length, 'workflow', 'workflows')} and {totals.transitions.toLocaleString()} transitions, every reachable state, in {report.ms} ms.{' '}
-          <b>{plural(totals.withFindings, 'workflow has', 'workflows have')} routes that go wrong</b>{totals.live ? <>, and <b className="il-live">{totals.live.toLocaleString()} work items are already in a wrong state</b>{totals.onRoute < totals.live ? `, ${totals.onRoute.toLocaleString()} of them where a proved route still leads today` : ''}.</> : measuring ? '. Counting the work items already affected…' : '.'}
+          {totals.transitions.toLocaleString()} transitions, every reachable state, in {report.ms} ms.
+          {totals.live > 0 && totals.onRoute < totals.live ? <> <b>{totals.onRoute.toLocaleString()}</b> of the work items sit where a proved route still leads today.</> : measuring ? ' Counting the work items already affected…' : ''}
         </p>
         <button className="il-btn" onClick={() => run(true)}>Check again</button>
       </header>
@@ -138,7 +154,7 @@ export default function App() {
             <button aria-pressed={filter === 'findings'} className={filter === 'findings' ? 'on' : ''} onClick={() => setFilter('findings')}>With findings <span>{totals.withFindings}</span></button>
             <button aria-pressed={filter === 'all'} className={filter === 'all' ? 'on' : ''} onClick={() => setFilter('all')}>All <span>{results.length}</span></button>
           </div>
-          {!results.some((r) => r.workflow.name === 'Ship: Software delivery workflow') && <Demo onDone={async (msg) => { await recheck(msg); setSelId((id) => id); setPendingSelect('Ship: Software delivery workflow'); }} />}
+          {totals.withFindings > 0 && !results.some((r) => r.workflow.name === 'Ship: Software delivery workflow') && <Demo onDone={async (msg) => { setTouched(true); await recheck(msg); setSelId((id) => id); setPendingSelect('Ship: Software delivery workflow'); }} />}
           <p className="il-lever-key" aria-hidden="true"><span className="live">n</span> work items already wrong <span><Lamp state="red" />n</span> findings</p>
           <ul>
             {list.map((r) => (
@@ -154,11 +170,18 @@ export default function App() {
           </ul>
         </nav>
         <main className="il-main">
-          {report.models[sel.workflow.id]
+          {!totals.withFindings && !results.some((r) => r.workflow.name === 'Ship: Software delivery workflow') ? (
+            <div className="il-clear">
+              <Lamp state="green" />
+              <h2>All {results.length.toLocaleString()} workflows hold, in every reachable state</h2>
+              <p>No route leaves work done but unresolved, reopened but still resolved, stranded, or past an approval. To see what Interlock does when one does, add a small software project whose workflow has the shortcuts teams add over time.</p>
+              <Demo primary onDone={async (msg) => { setTouched(true); await recheck(msg); setPendingSelect('Ship: Software delivery workflow'); }} />
+            </div>
+          ) : report.models[sel.workflow.id]
             ? <Diagram key={sel.workflow.id} model={model} result={sel} focus={focus} />
             : <div className="il-empty small"><p>This site has so many workflows that Interlock sends diagrams only for the ones with findings. {sel.workflow.name} has none: every property holds for every reachable state.</p></div>}
         </main>
-        <Table key={sel.workflow.id} result={sel} model={model} focus={focus} setFocus={setFocus} replays={replays} setReplays={setReplays} onFixed={recheck} onIntended={markIntended}
+        <Table key={sel.workflow.id} result={sel} model={model} focus={focus} setFocus={(f) => { setTouched(true); setFocus(f); }} replays={replays} setReplays={setReplays} onFixed={recheck} onIntended={markIntended}
           fixes={Object.values(report.fixes || {}).filter((x) => x.workflowId === sel.workflow.id)} onUndoFix={async (fx) => {
             setNotice({ msg: 'Taking the fix back and proving the site again…' });
             try { const out = await invoke('fix', { workflowId: sel.workflow.id, property: fx.property, status: fx.status, mode: 'undo' }); if (!out?.applied) throw new Error((out?.errors || []).join(' ') || out?.note || 'Jira did not accept the change'); await recheck(`Undone: ${fx.transitions.join(', ')} in ${fx.name} are back as they were.`); }
@@ -168,6 +191,13 @@ export default function App() {
       </div>
     </div>
   );
+}
+
+// The finding to light first: the one with the most work items already in its status, else the most severe.
+function worstFinding(r) {
+  const own = (f) => r.observed?.[f.property]?.byStatus?.[f.subject] || 0;
+  const all = groupFindings(r.findings).flatMap((g) => g.list);
+  return [...all].filter((f) => own(f) > 0).sort((a, b) => own(b) - own(a))[0] || all.find((f) => f.route?.hops?.length) || all[0] || null;
 }
 
 // Workflows are ranked by work items a proved route explains, then by items left over, then by findings.
@@ -286,6 +316,20 @@ function Diagram({ model, result, focus }) {
     return () => { cancel = true; };
   }, [focus]);
 
+  // each step of the focused route is named on its track, at about 12 px on screen
+  const [hopLabels, setHopLabels] = useState([]);
+  useEffect(() => {
+    if (!route.length) { setHopLabels([]); return; }
+    const out = [];
+    route.forEach((h, i) => {
+      const el = pathRefs.current[`${h.transitionId}:${h.from}`] || pathRefs.current[`${h.transitionId}:*`];
+      if (!el) return;
+      const len = el.getTotalLength(), p = el.getPointAtLength(len * (el.classList.contains('global') ? 0.85 : 0.5));
+      out.push({ key: `${h.transitionId}:${h.from}:${i}`, x: p.x, y: p.y, text: h.transition });
+    });
+    setHopLabels(out);
+  }, [focus, width, height, vertical]); // eslint-disable-line react-hooks/exhaustive-deps
+  const labelSize = Math.min(18, Math.max(11, 12 / (fitScale * zoom)));
   const globals = model.transitions.filter((t) => t.type === 'GLOBAL');
   return (
     <div ref={wrapRef} className={`il-diagram-wrap ${zoom > 1 ? 'zoomed' : 'fit'} ${vertical ? 'vertical' : ''}`}>
@@ -328,6 +372,15 @@ function Diagram({ model, result, focus }) {
               <circle className="lamp" cx="16" cy={BLOCK_H / 2} r="6" />
               <StatusLabel name={s.name} />
               {s.id === model.initial && <text className="start" x="0" y="-8">Created here</text>}
+            </g>
+          );
+        })}
+        {hopLabels.map((l) => {
+          const w = l.text.length * labelSize * 0.56 + labelSize;
+          return (
+            <g key={l.key} className="il-hop" transform={`translate(${l.x},${l.y})`} aria-hidden="true">
+              <rect x={-w / 2} y={-labelSize * 0.95} width={w} height={labelSize * 1.9} rx={labelSize * 0.95} />
+              <text textAnchor="middle" y={labelSize * 0.36} style={{ fontSize: labelSize }}>{l.text}</text>
             </g>
           );
         })}
@@ -531,7 +584,7 @@ function Evidence({ obs, property, flagged, fixAt }) {
 }
 
 // One click builds a realistic software project on an empty site, so the proof has real work items to count.
-function Demo({ onDone }) {
+function Demo({ onDone, primary = false }) {
   const [state, setState] = useState(null);
   const go = async () => {
     try {
@@ -547,7 +600,8 @@ function Demo({ onDone }) {
   };
   return (
     <div className="il-demo">
-      {state ? <p>{state}</p> : <><p>Want a software example with a review rule to prove?</p><button className="il-btn" onClick={go}>Add the Ship demo project</button></>}
+      {state ? <p role="status">{state}</p> : primary ? <button className="il-btn primary" onClick={go}>Add the Ship demo project</button>
+        : <><p>Want a software example with a review rule to prove?</p><button className="il-btn" onClick={go}>Add the Ship demo project</button></>}
     </div>
   );
 }

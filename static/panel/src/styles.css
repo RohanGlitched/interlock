@@ -33,11 +33,19 @@ button, select { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--ds-border-focused, #388bff); outline-offset: 2px; }
 
 .il-app { display: flex; flex-direction: column; height: 100vh; min-height: 560px; }
-.il-head { display: flex; align-items: center; gap: 20px; padding: 14px 20px; border-bottom: 1px solid var(--il-border); }
+.il-head { display: flex; align-items: center; gap: 28px; padding: 12px 20px; background: var(--il-panel); color: var(--il-panel-ink); border-bottom: 3px solid var(--il-panel-block); }
 .il-brand { display: flex; align-items: center; gap: 10px; }
 .il-brand h1 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 0.01em; }
-.il-summary { margin: 0; flex: 1; color: var(--il-subtle); max-width: 90ch; }
-.il-summary b { color: var(--il-text); font-weight: 700; }
+.il-board { display: flex; gap: 6px; margin: 0; }
+.il-board > div { display: flex; flex-direction: column-reverse; min-width: 116px; padding: 6px 14px 7px; border-radius: 5px; background: var(--il-panel-block); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05); }
+.il-board dd { margin: 0; font-size: 26px; line-height: 1.05; font-weight: 800; letter-spacing: -0.01em; }
+.il-board dt { font-size: 12px; color: rgba(230, 236, 228, 0.75); }
+.il-board .bad dd { color: var(--il-lit-red); text-shadow: 0 0 12px rgba(255, 85, 68, 0.45); }
+.il-board .good dd { color: var(--il-lit-green); }
+.il-summary { margin: 0; flex: 1; color: rgba(230, 236, 228, 0.78); font-size: 13px; max-width: 46ch; }
+.il-summary b { color: var(--il-panel-ink); font-weight: 700; }
+.il-head .il-btn { background: transparent; color: var(--il-panel-ink); border-color: rgba(230, 236, 228, 0.35); }
+.il-head .il-btn:hover { background: rgba(230, 236, 228, 0.1); }
 .il-btn { border: 1px solid var(--il-border); background: var(--il-surface); border-radius: 4px; padding: 6px 12px; cursor: pointer; font-weight: 600; }
 .il-btn:hover { background: var(--ds-background-neutral-subtle-hovered, #091e420f); }
 .il-btn.primary { background: var(--il-brand); color: var(--ds-text-inverse, #fff); border-color: transparent; }
@@ -53,24 +61,27 @@ button, select { font: inherit; color: inherit; }
 .il-lamp.amber { background: radial-gradient(circle at 35% 35%, #ffd98a, var(--il-amber) 60%); box-shadow: 0 0 6px rgba(217, 154, 28, 0.55); }
 
 /* the lever frame: one lever per workflow */
-.il-levers { border-right: 1px solid var(--il-border); overflow: auto; background: var(--il-surface); }
-.il-filter { display: flex; gap: 4px; padding: 10px 12px; position: sticky; top: 0; background: var(--il-surface); border-bottom: 1px solid var(--il-border); z-index: 1; }
-.il-filter button { border: 0; background: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; color: var(--il-subtle); font-weight: 600; }
-.il-filter button.on { background: var(--ds-background-selected, #e9f2ff); color: var(--ds-text-selected, #0c66e4); }
-.il-filter span { color: var(--il-subtlest); font-weight: 500; margin-left: 4px; }
+.il-levers { overflow: auto; background: #1f2a24; color: var(--il-panel-ink); border-right: 3px solid var(--il-panel-block); }
+.il-filter { display: flex; gap: 4px; padding: 10px 12px; position: sticky; top: 0; background: #1f2a24; border-bottom: 1px solid rgba(230, 236, 228, 0.12); z-index: 1; }
+.il-filter button { white-space: nowrap; border: 0; background: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; color: rgba(230, 236, 228, 0.75); font-weight: 600; }
+.il-filter button.on { background: rgba(230, 236, 228, 0.14); color: var(--il-panel-ink); }
+.il-filter span { color: rgba(230, 236, 228, 0.6); font-weight: 500; margin-left: 4px; }
 .il-levers ul { list-style: none; margin: 0; padding: 6px 0; }
 .il-lever { display: grid; grid-template-columns: 14px 1fr auto; align-items: center; gap: 10px; width: 100%; border: 0; background: none; padding: 7px 14px; text-align: left; cursor: pointer; }
-.il-lever:hover { background: var(--ds-background-neutral-subtle-hovered, #091e420a); }
-.il-lever .handle { width: 6px; height: 22px; border-radius: 3px; background: var(--il-off); justify-self: center; transition: transform 0.25s cubic-bezier(.3, 1.6, .5, 1), background 0.2s; transform-origin: 50% 100%; }
-.il-lever.pulled .handle { background: var(--il-ink); transform: rotate(-22deg); }
-.il-lever.pulled { background: var(--ds-background-selected, #e9f2ff); }
+.il-lever { color: var(--il-panel-ink); border-left: 3px solid transparent; }
+.il-lever:hover { background: rgba(230, 236, 228, 0.06); }
+/* a lever: a polished handle on a dark slot; pulling one throws it over */
+.il-lever .handle { width: 8px; height: 26px; border-radius: 4px 4px 2px 2px; background: linear-gradient(90deg, #6f7d72, #9aa79c 45%, #5e6b61); box-shadow: 0 1px 0 #0d130f; justify-self: center;
+  transition: transform 0.25s cubic-bezier(.3, 1.6, .5, 1), background 0.2s; transform-origin: 50% 100%; }
+.il-lever.pulled .handle { background: linear-gradient(90deg, #d8d2c0, #fff8e6 45%, #bdb7a5); transform: rotate(-24deg); }
+.il-lever.pulled { background: rgba(230, 236, 228, 0.1); border-left-color: var(--il-lit-amber); }
 .il-lever .name { font-size: 13px; line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.il-lever .name .proj { display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; color: var(--il-subtle, #626f86); }
+.il-lever .name .proj { display: block; width: fit-content; margin-bottom: 3px; padding: 0 5px; border: 1px solid rgba(230, 236, 228, 0.4); border-radius: 2px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; color: var(--il-panel-ink); }
 .il-lever:has(.proj) .name { -webkit-line-clamp: 3; }
-.il-lever-key { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 14px 0; font-size: 11px; color: var(--il-subtle, #626f86); }
-.il-lever-key > span { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; color: var(--il-red); }
+.il-lever-key { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 14px 0; font-size: 11px; color: rgba(230, 236, 228, 0.7); }
+.il-lever-key > span { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; color: var(--il-lit-red); }
 .il-lever-key .live { background: var(--ds-background-danger-bold, #c9372c); color: var(--ds-text-inverse, #fff); border-radius: 999px; padding: 0 7px; }
-.il-lever .count { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: 12px; color: var(--il-red); }
+.il-lever .count { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: 12px; color: var(--il-lit-red); }
 
 /* the track diagram on its enamel panel */
 .il-main { overflow: auto; background:
@@ -88,7 +99,7 @@ button, select { font: inherit; color: inherit; }
 .il-rail { stroke: var(--il-panel-track); stroke-width: 2; stroke-dasharray: 2 5; opacity: 0.7; }
 .il-rail-label { font-size: 11px; fill: var(--il-panel-ink); opacity: 0.65; font-weight: 600; }
 .il-track { fill: none; stroke: var(--il-panel-track); stroke-width: 3; opacity: 0.85; stroke-linecap: round; }
-.il-track.back { stroke-width: 1.4; opacity: 0.35; stroke-dasharray: 5 4; }
+.il-track.back { stroke-width: 1.6; opacity: 0.55; stroke-dasharray: 5 4; }
 .il-track.global { stroke-width: 1.6; stroke-dasharray: 3 4; opacity: 0.55; }
 .il-track.route { stroke: var(--il-lit-red); stroke-width: 5; opacity: 1; stroke-dasharray: 10 6; animation: il-flow 0.6s linear infinite; filter: url(#il-glow); }
 @keyframes il-flow { to { stroke-dashoffset: -16; } }
@@ -142,10 +153,9 @@ button, select { font: inherit; color: inherit; }
 .il-rules h3 { font-size: 14px; margin: 0 0 4px; }
 .il-rule { font-size: 13px; margin: 0 0 6px; }
 .il-rule-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
-.il-rule-form select { padding: 4px 6px; border: 1px solid var(--il-border); border-radius: 4px; background: var(--il-surface); max-width: 150px; }
 
-.il-boot { display: grid; place-items: center; align-content: center; gap: 14px; height: 100vh; background: var(--il-enamel); color: #1d2620; }
-.il-boot-track { display: flex; gap: 22px; padding: 10px 24px; border-top: 3px solid var(--il-track); }
+.il-boot { display: grid; place-items: center; align-content: center; gap: 14px; height: 100vh; background: var(--il-panel); color: var(--il-panel-ink); }
+.il-boot-track { display: flex; gap: 22px; padding: 10px 24px; border-top: 3px solid var(--il-panel-track); }
 .il-boot .il-lamp { animation: il-blink 1s ease-in-out infinite; }
 @keyframes il-blink { 50% { opacity: 0.25; } }
 .il-boot p { margin: 0; }
@@ -170,7 +180,8 @@ button, select { font: inherit; color: inherit; }
 .il-notice { display: flex; align-items: center; gap: 10px; padding: 10px 20px; background: var(--ds-background-success, #dcfff1); color: var(--ds-text-success, #216e4e); font-weight: 600; }
 .il-notice .il-link { margin-left: auto; }
 
-.il-demo { padding: 10px 14px; border-bottom: 1px solid var(--il-border); font-size: 12px; color: var(--il-subtle); }
+.il-demo { padding: 10px 14px; border-bottom: 1px solid rgba(230, 236, 228, 0.12); font-size: 12px; color: rgba(230, 236, 228, 0.75); }
+.il-levers .il-demo .il-btn { background: transparent; color: var(--il-panel-ink); border-color: rgba(230, 236, 228, 0.35); }
 .il-demo p { margin: 0 0 6px; }
 
 .il-suggest { font-size: 13px; color: var(--il-subtle); margin: 0 0 10px; }
@@ -205,9 +216,8 @@ button, select { font: inherit; color: inherit; }
 /* a focused route: its track at full light, the rest of the frame dimmed */
 .il-diagram.focused .il-track:not(.route) { opacity: 0.18; transition: opacity .25s ease; }
 .il-diagram .il-block text.two { font-size: 11.5px; }
-.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* rule pickers in the panel's own style rather than the browser default */
-.il-rule-form select { appearance: none; padding: 5px 26px 5px 9px; border: 1px solid var(--il-border); border-radius: 4px; font: inherit; font-size: 13px; color: var(--il-text);
+.il-rule-form select { max-width: 150px; appearance: none; padding: 5px 26px 5px 9px; border: 1px solid var(--il-border); border-radius: 4px; font: inherit; font-size: 13px; color: var(--il-text);
   background: var(--il-surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2344546f' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 9px center; }
 .il-rule-form select:focus-visible { outline: 2px solid var(--il-brand); outline-offset: 1px; }
 
@@ -249,6 +259,17 @@ button, select { font: inherit; color: inherit; }
 .il-notice.error { background: var(--ds-background-danger, #ffeceb); color: var(--ds-text-danger, #ae2e24); }
 .il-notice .il-link + .il-link { margin-left: 8px; }
 
-.il-lever .live.left { background: color-mix(in srgb, var(--il-amber) 30%, transparent); color: var(--il-text); }
+.il-lever .live.left { background: color-mix(in srgb, var(--il-lit-amber) 28%, transparent); color: var(--il-panel-ink); }
 
 .il-diagram-wrap.fit { overflow: auto; }
+
+/* the steps of a lit route, named on the track */
+.il-hop rect { fill: var(--il-panel-block); stroke: var(--il-lit-red); stroke-width: 1.2; }
+.il-hop text { fill: #fff6d6; font-weight: 700; }
+
+/* a site where every workflow holds */
+.il-clear { max-width: 52ch; margin: 12vh auto 0; padding: 0 24px; color: var(--il-panel-ink); }
+.il-clear .il-lamp { width: 18px; height: 18px; }
+.il-clear h2 { margin: 12px 0 8px; font-size: 22px; line-height: 1.25; font-weight: 800; }
+.il-clear p { margin: 0 0 16px; color: rgba(230, 236, 228, 0.8); }
+.il-clear .il-demo { padding: 0; border: 0; }
