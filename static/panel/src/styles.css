@@ -68,6 +68,7 @@ button, select { font: inherit; color: inherit; }
 .il-rail { stroke: var(--il-track); stroke-width: 2; stroke-dasharray: 2 5; }
 .il-rail-label { font-size: 11px; fill: var(--il-ink); opacity: 0.6; font-weight: 600; }
 .il-track { fill: none; stroke: var(--il-track); stroke-width: 3; opacity: 0.85; stroke-linecap: round; }
+.il-track.back { stroke-width: 1.4; opacity: 0.35; stroke-dasharray: 5 4; }
 .il-track.global { stroke-width: 1.6; stroke-dasharray: 3 4; opacity: 0.55; }
 .il-track.route { stroke: var(--il-red); stroke-width: 5; opacity: 1; stroke-dasharray: 10 6; animation: il-flow 0.6s linear infinite; }
 @keyframes il-flow { to { stroke-dashoffset: -16; } }

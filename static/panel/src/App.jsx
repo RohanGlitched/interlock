@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke, openIssue, openPath } from './bridge.js';
 import { check, explore, PROPERTIES } from '../../../engine/interlock.mjs';
-import { layout, trackPath, globalPath, BLOCK_W, BLOCK_H } from './layout.js';
+import { layout, tracks, trackPath, globalPath, BLOCK_W, BLOCK_H } from './layout.js';
 
 const reduceMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -160,11 +160,17 @@ function Diagram({ model, result, focus }) {
           const d = globalPath(b, k), on = routeKey.has(`${t.id}:${route.find((h) => h.transitionId === t.id)?.from}`);
           return <path key={t.id} ref={(el) => { if (el) pathRefs.current[`${t.id}:*`] = el; }} d={d} className={`il-track global ${on ? 'route' : ''}`} />;
         })}
-        {model.transitions.filter((t) => t.type !== 'GLOBAL').flatMap((t, k) => t.from.map((f) => {
-          const a = pos.get(f), b = pos.get(t.to); if (!a || !b) return null;
-          const id = `${t.id}:${f}`;
-          return <path key={id} ref={(el) => { if (el) pathRefs.current[id] = el; }} d={trackPath(a, b, k % 4)} className={`il-track ${routeKey.has(id) ? 'route' : ''}`} />;
-        }))}
+        {tracks(model).map((tr, k) => {
+          const a = pos.get(tr.from), b = pos.get(tr.to); if (!a || !b) return null;
+          const ids = tr.transitions.map((t) => `${t.id}:${tr.from}`);
+          const on = ids.some((id) => routeKey.has(id));
+          return (
+            <path key={`${tr.from}>${tr.to}`} d={trackPath(a, b, k % 4)} className={`il-track ${b.x <= a.x ? 'back' : ''} ${on ? 'route' : ''}`}
+              ref={(el) => { if (el) for (const id of ids) pathRefs.current[id] = el; }}>
+              <title>{tr.transitions.map((t) => t.name).join(', ')}</title>
+            </path>
+          );
+        })}
         {model.statuses.map((s) => {
           const p = pos.get(s.id), state = bad.has(s.id) ? 'red' : unreachable.has(s.id) ? 'amber' : 'green';
           const i = order.get(s.id) ?? 30;
