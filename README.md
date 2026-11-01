@@ -35,6 +35,8 @@ Then **fix at the cause**: for resolution findings, Interlock adds *Set resoluti
 
 On that demo site (before we added our own Ship and TPL projects), 13 of the 29 workflows with findings are copies of Jira Service Management template workflows; the Change Management copy appears in six projects with the same five findings, and one was confirmed on a real work item: a declined change sent back to Review stays resolved as Declined. A project created from the same template today does not have that route, so these copies come from an earlier version of the template or were edited after they were made. Either way, nothing in Jira tells an admin which workflows still carry such routes; Interlock does. The full list is in [Resolution defects in template-made workflows](docs/atlassian-templates.md).
 
+**On public Jira sites** the same counts are visible to anyone: 1,844 done-but-unresolved and 1,239 open-but-resolved items on Apache's Jira, 1,092 done-but-unresolved on Atlassian's own public tracker, and zero on OpenJDK's. Apache Lucene alone has 380 issues that were reopened from Closed without clearing the resolution, a route visible in their public history. See [Resolution defects on public Jira sites](docs/public-jira.md).
+
 ## In Jira
 
 **The Interlock page** (Apps → Interlock) is a signal-box mimic panel:
