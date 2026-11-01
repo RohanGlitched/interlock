@@ -27,7 +27,7 @@ export default function App() {
     invoke('checkSite', { fresh }).then((r) => {
       setReport(r);
       setMeasuring(true);
-      invoke('measureSite', {}).then((m) => setReport((cur) => cur && withCounts(cur, m))).catch(() => {}).finally(() => setMeasuring(false));
+      invoke('measureSite', {}).then((m) => setReport((cur) => (cur && cur.checkedAt === r.checkedAt ? withCounts(cur, m) : cur))).catch(() => {}).finally(() => setMeasuring(false));
       const live = (x) => Object.values(x.observed || {}).reduce((b, o) => b + o.bad, 0);
       const worst = [...r.results].sort((a, b) => live(b) - live(a) || b.findings.length - a.findings.length)[0];
       setSelId((id) => id || worst?.workflow.id);
@@ -48,10 +48,10 @@ export default function App() {
     setNotice(msg ? { msg, undo } : null);
     let r;
     try { r = await invoke('checkSite', {}); }
-    catch (e) { setNotice({ msg: `${msg || ''} Proving the site again failed (${e.message || e}); select Check again.`, undo }); return; }
+    catch (e) { setNotice({ msg: `${msg || ''} Proving the site again failed (${e.message || e}); select Check again.`, undo, error: true }); return; }
     setReport(r); setFocus(null);
     setMeasuring(true);
-    invoke('measureSite', {}).then((m) => setReport((cur) => cur && withCounts(cur, m))).catch(() => {}).finally(() => setMeasuring(false));
+    invoke('measureSite', {}).then((m) => setReport((cur) => (cur && cur.checkedAt === r.checkedAt ? withCounts(cur, m) : cur))).catch(() => {}).finally(() => setMeasuring(false));
   };
 
   // re-check the selected workflow in the browser whenever its rules change
@@ -96,7 +96,7 @@ export default function App() {
   const sel = results.find((r) => r.workflow.id === selId) || results[0];
   const model = { ...report.models[sel.workflow.id], teamManaged: sel.teamManaged };
   const totals = summarise(results);
-  const liveOf = (r) => Object.values(r.observed || {}).reduce((b, o) => b + o.bad, 0);
+  const liveOf = (r) => Object.entries(r.observed || {}).filter(([p]) => r.findings.some((f) => f.property === p)).reduce((b, [, o]) => b + o.bad, 0);
   const ranked = [...results].sort((a, b) => liveOf(b) - liveOf(a) || b.findings.length - a.findings.length || a.workflow.name.localeCompare(b.workflow.name));
   const list = (frozen ? [...results].sort((a, b) => (frozen.indexOf(a.workflow.id) + 1 || 1e9) - (frozen.indexOf(b.workflow.id) + 1 || 1e9)) : ranked)
     .filter((r) => filter === 'all' || !totals.withFindings || r.findings.length);
@@ -112,11 +112,11 @@ export default function App() {
         <button className="il-btn" onClick={() => run(true)}>Check again</button>
       </header>
       {notice && (
-        <div className="il-notice" role="status"><Lamp state="green" />{notice.msg}
+        <div className={`il-notice ${notice.error ? 'error' : ''}`} role={notice.error ? 'alert' : 'status'}><Lamp state={notice.error ? 'red' : 'green'} />{notice.msg}
           {notice.undo && <button className="il-link" onClick={async () => {
             const u = notice.undo; setNotice({ msg: 'Taking the fix back and proving the site again…' });
             try { await invoke('fix', { ...u, mode: 'undo' }); await recheck(`Undone: ${u.transitions.join(', ')} in ${u.name} no longer ${u.transitions.length === 1 ? 'changes' : 'change'} the resolution.`); }
-            catch (e) { setNotice({ msg: 'Could not undo the fix: ' + (e.message || e) }); }
+            catch (e) { setNotice({ msg: 'Could not undo the fix: ' + (e.message || e), error: true }); }
           }}>Undo</button>}
           <button className="il-link" onClick={() => setNotice(null)}>Dismiss</button>
         </div>
@@ -151,9 +151,9 @@ export default function App() {
           fixes={Object.values(report.fixes || {}).filter((x) => x.workflowId === sel.workflow.id)} onUndoFix={async (fx) => {
             setNotice({ msg: 'Taking the fix back and proving the site again…' });
             try { await invoke('fix', { workflowId: sel.workflow.id, property: fx.property, status: fx.status, mode: 'undo' }); await recheck(`Undone: ${fx.transitions.join(', ')} in ${fx.name} are back as they were.`); }
-            catch (e) { setNotice({ msg: 'Could not undo the fix: ' + (e.message || e) }); }
+            catch (e) { setNotice({ msg: 'Could not undo the fix: ' + (e.message || e), error: true }); }
           }}
-          rules={rules[sel.workflow.id] || []} setRules={(r) => { setRules((x) => ({ ...x, [sel.workflow.id]: r })); invoke('saveRules', { workflowId: sel.workflow.id, rules: r }).catch((e) => setNotice({ msg: 'The rule is proved here but was not saved: ' + (e.message || e) })); }} />
+          rules={rules[sel.workflow.id] || []} setRules={(r) => { setRules((x) => ({ ...x, [sel.workflow.id]: r })); invoke('saveRules', { workflowId: sel.workflow.id, rules: r }).catch((e) => setNotice({ msg: 'The rule is proved here but was not saved: ' + (e.message || e), error: true })); }} />
       </div>
     </div>
   );
@@ -225,12 +225,14 @@ function Diagram({ model, result, focus }) {
     const fit = (l) => Math.min(frame.w / l.width, (frame.h - 60) / l.height);
     return fit(v) > fit(h) * 1.15 ? v : h;
   }, [model, frame]);
+  // the scale the diagram has when it fits the frame; zoom multiplies it
+  const fitScale = frame ? Math.min(1.7, frame.w / width, Math.max(0.2, (frame.h - 60) / height)) : 0.6;
   const order = useMemo(() => { // the order in which the explorer first reaches each status
     const seen = explore(model), first = new Map(); let i = 0;
     for (const n of seen.values()) if (!first.has(n.s)) first.set(n.s, i++);
     return first;
   }, [model]);
-  const bad = new Set(result.findings.filter((f) => f.status).map((f) => f.status));
+  const bad = new Set(result.findings.filter((f) => f.status && f.property !== 'unreachable').map((f) => f.status));
   const unreachable = new Set(result.findings.filter((f) => f.property === 'unreachable').map((f) => f.status));
   const route = focus?.route?.hops || [];
   const routeKey = new Set(route.map((h) => `${h.transitionId}:${h.from}`));
@@ -274,14 +276,14 @@ function Diagram({ model, result, focus }) {
         <button onClick={() => setZoom((z) => Math.min(4, z + 0.5))} aria-label="Zoom in">+</button>
       </div>
       <svg className={`il-diagram ${route.length ? 'focused' : ''}`} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet"
-        style={zoom > 1 ? { width: width * zoom * 0.6, height: height * zoom * 0.6 } : { maxHeight: height * 1.7, maxWidth: width * 1.7 }} role="img" aria-label={`Track diagram of ${result.workflow.name}`}>
+        style={zoom > 1 ? { width: width * fitScale * zoom, height: height * fitScale * zoom } : { maxHeight: height * 1.7, maxWidth: width * 1.7 }} role="img" aria-label={`Track diagram of ${result.workflow.name}`}>
         <defs>
           <filter id="il-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.4" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
         </defs>
-        {vertical
+        {globals.length > 0 && (vertical
           ? <line className="il-rail" x1="16" x2="16" y1="34" y2={height - 20} />
-          : <line className="il-rail" x1="16" x2={width - 16} y1="34" y2="34" />}
-        <text className="il-rail-label" x="18" y="24">From any status</text>
+          : <line className="il-rail" x1="16" x2={width - 16} y1="34" y2="34" />)}
+        {globals.length > 0 && <text className="il-rail-label" x="18" y="24">From any status</text>}
         {globals.map((t, k) => {
           const b = pos.get(t.to); if (!b) return null;
           const d = globalPath(b, k, vertical), on = routeKey.has(`${t.id}:${route.find((h) => h.transitionId === t.id)?.from}`);
@@ -340,10 +342,10 @@ function Legend({ teamManaged }) {
 // ---------- the interlocking table ----------
 function Table({ result, model, focus, setFocus, replays, setReplays, rules, setRules, onFixed, onIntended, fixes = [], onUndoFix }) {
   // the fix (if any) Interlock applied for one of these findings' statuses
-  const fixFor = (property, statuses) => fixes.find((x) => x.property === property && statuses.includes(x.status));
+  const fixFor = (property) => fixes.filter((x) => x.property === property).sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0];
   const usage = result.usage.find((u) => u.project);
   async function replay(f) {
-    const k = `${result.workflow.id}:${f.id}`;
+    const k = `${result.workflow.id}|${f.property}|${f.subject}`;
     setReplays((r) => ({ ...r, [k]: { status: 'running' } }));
     try {
       const out = await invoke('replay', { project: usage.project, projectId: usage.projectId, issueType: usage.issueType, workflow: result.workflow.name, hops: f.route.hops, label: `${f.title}, ${result.workflow.name}`, startName: f.route.startName });
@@ -359,7 +361,7 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
         {groupFindings(result.findings).map(({ property, list }) => {
           const active = list.find((f) => f.id === focus?.id);
           const f = active || list[0];
-          const k = `${result.workflow.id}:${f.id}`, rp = replays[k];
+          const k = `${result.workflow.id}|${f.property}|${f.subject}`, rp = replays[k];
           const verdict = rp?.status === 'done' ? verdictOf(f, rp) : null;
           return (
             <li key={property} className={`il-finding ${active ? 'on' : ''} ${verdict?.confirmed ? 'confirmed' : ''}`}>
@@ -368,7 +370,7 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
                 <span><b>{f.title}</b>{list.length === 1 ? f.subject : `${list.length} statuses`}</span>
               </button>
               <Tiers f={f} obs={result.observed?.[property]} statuses={list.map((x) => x.subject)} verdict={verdict} />
-              <Evidence obs={result.observed?.[property]} property={property} flagged={list.map((x) => x.subject)} fixAt={fixFor(property, list.map((x) => x.status))?.at} />
+              <Evidence obs={result.observed?.[property]} property={property} flagged={list.map((x) => x.subject)} fixAt={fixFor(property)?.at} />
               {list.length > 1 && (
                 <div className="il-chips" role="group" aria-label={f.title}>
                   {list.map((x) => <button key={x.id} aria-pressed={focus?.id === x.id} className={focus?.id === x.id ? 'on' : ''} onClick={() => setFocus(focus?.id === x.id ? null : x)}>{x.subject}</button>)}
@@ -408,7 +410,7 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
                   {(f.property === 'doneUnresolved' || f.property === 'openResolved') && (
                     <Fix key={f.id} f={f} result={result} onFixed={onFixed} />
                   )}
-                  {f.property !== 'mustPass' && <Intend key={`i${f.id}`} onSave={(reason) => onIntended(result, f, reason)} />}
+                  {f.property !== 'mustPass' && f.property !== 'ruleStale' && <Intend key={`i${f.id}`} onSave={(reason) => onIntended(result, f, reason)} />}
                 </div>
               )}
             </li>
@@ -487,6 +489,7 @@ function Evidence({ obs, property, flagged, fixAt }) {
         )}
         {trace === 'loading' && <p className="il-trace">Reading their history…</p>}
         {trace?.error && <p className="il-trace">{trace.error}</p>}
+        {trace?.ways && obs.bad > 50 && <p className="il-trace">From the history of 50 of the {obs.bad.toLocaleString()} (the most recently changed):</p>}
         {trace?.ways && (
           <ul className="il-trace">
             {trace.ways.map((w) => (
@@ -507,7 +510,7 @@ function Evidence({ obs, property, flagged, fixAt }) {
   return <p className="il-evidence latent">None yet: 0 of {obs.of.toLocaleString()} {property === 'doneUnresolved' ? 'done' : 'open'} work items. Something else may be setting the resolution; replay the route to be sure.</p>;
 }
 
-// One click builds a realistic software project on an empty site, so the proof has real tickets to count.
+// One click builds a realistic software project on an empty site, so the proof has real work items to count.
 function Demo({ onDone }) {
   const [state, setState] = useState(null);
   const go = async () => {
@@ -515,11 +518,11 @@ function Demo({ onDone }) {
       setState('Creating the Ship workflow, scheme and project…');
       const { project, moves } = await invoke('demoSetup', {});
       for (let i = 0; i < moves.length; i += 4) {
-        setState(`Moving tickets along real routes: ${Math.min(i + 4, moves.length)} of ${moves.length}…`);
+        setState(`Moving work items along real routes: ${Math.min(i + 4, moves.length)} of ${moves.length}…`);
         await invoke('demoMove', { moves: moves.slice(i, i + 4) });
       }
       setState(null);
-      await onDone(`Added the ${project} demo project: ${moves.length} tickets moved along real routes of the Ship workflow.`);
+      await onDone(`Added the ${project} demo project: ${moves.length} work items moved along real routes of the Ship workflow.`);
     } catch (e) { setState('Could not build the demo: ' + (e.message || e)); }
   };
   return (
@@ -551,7 +554,9 @@ function Fix({ f, result, onFixed }) {
   return (
     <div className="il-fix">
       <h4>Fix at the cause</h4>
-      {state.step === 'idle' && <><p>Make every transition into {f.subject} {fixText}, except ones whose screen already asks the person for a resolution. Jira checks the change before anything is saved, and you can undo it.</p><button className="il-btn" onClick={() => ask('validate')}>Check the fix with Jira</button></>}
+      {state.step === 'idle' && <><p>{f.property === 'doneUnresolved'
+        ? <>Make every transition into {f.subject} set the resolution, except ones whose screen already asks the person for one.</>
+        : <>Make every transition that takes work from a done status back to {f.subject} clear the resolution.</>} Jira checks the change before anything is saved, and you can undo it.</p><button className="il-btn" onClick={() => ask('validate')}>Check the fix with Jira</button></>}
       {state.step === 'checking' && <p className="il-note">Asking Jira to validate the change…</p>}
       {state.step === 'checked' && (state.valid ? (
         <>
@@ -567,7 +572,7 @@ function Fix({ f, result, onFixed }) {
 }
 
 // One row per property, worst first; each affected status becomes a chip with its own route.
-const SEVERITY = ['approvalSkipped', 'stranded', 'mustPass', 'doneUnresolved', 'openResolved', 'nobody', 'unreachable'];
+const SEVERITY = ['approvalSkipped', 'stranded', 'mustPass', 'doneUnresolved', 'openResolved', 'nobody', 'unreachable', 'ruleStale'];
 function groupFindings(findings) {
   const by = new Map();
   for (const f of findings) { if (!by.has(f.property)) by.set(f.property, []); by.get(f.property).push(f); }

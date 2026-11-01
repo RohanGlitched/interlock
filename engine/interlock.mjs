@@ -19,7 +19,7 @@ const RES_FIELD = 'resolution';
 // Turn the REST shape (GET /rest/api/3/workflows/search?expand=values.transitions) into a small model.
 // statuses: Map id -> { name, category: 'TODO' | 'IN_PROGRESS' | 'DONE' }
 // screenHasResolution: Set of transition screen ids whose tabs include the Resolution field.
-export function buildModel(workflow, statuses, { screenHasResolution = new Set(), teamManaged = false } = {}) {
+export function buildModel(workflow, statuses, { screenHasResolution = new Set(), unreadableScreens = new Set(), teamManaged = false } = {}) {
   const ids = workflow.statuses.map((s) => s.statusReference);
   const props = new Map(workflow.statuses.map((s) => [s.statusReference, s.properties || {}]));
   // Jira Service Management marks an approval step with approval.* properties on the status
@@ -37,6 +37,10 @@ export function buildModel(workflow, statuses, { screenHasResolution = new Set()
     }
     const screenId = t.transitionScreen?.parameters?.screenId || null;
     if (!resolution && screenId && screenHasResolution.has(String(screenId))) resolution = 'set';
+    // a screen Interlock could not read is assumed to ask for a resolution into a done status (so it never
+    // invents a "done but unresolved"), and to leave the resolution alone elsewhere (so it never invents a
+    // "reopened but still resolved")
+    if (!resolution && screenId && unreadableScreens.has(String(screenId)) && statuses.get(t.toStatusReference)?.category === 'DONE') resolution = 'set';
     transitions.push({
       id: t.id, name: t.name, type: t.type, from, to: t.toStatusReference, resolution, screenId,
       conditions: flattenConditions(t.conditions), conditionTree: treeOf(t.conditions), validators: (t.validators || []).map((v) => ({ key: v.ruleKey, params: v.parameters || {} })),
@@ -129,7 +133,7 @@ function exploreRule(model, target, via) {
       if (model.teamManaged) r = cat.get(t.to) === 'DONE';
       else if (t.resolution === 'set') r = true;
       else if (t.resolution === 'clear') r = false;
-      const p = t.to === via ? true : cur.s === target && t.to !== target ? false : cur.p;
+      const p = t.to === via ? true : (cur.s === target && t.to !== target) || (cat.get(cur.s) === 'DONE' && cat.get(t.to) !== 'DONE') ? false : cur.p;
       const k = k3(t.to, r, p);
       if (seen.has(k)) continue;
       seen.set(k, { s: t.to, r, p, prev: k3(cur.s, cur.r, cur.p), via: t });
@@ -158,7 +162,11 @@ function exploreApproval(model, approvals) {
       else if (t.resolution === 'set') r = true;
       else if (t.resolution === 'clear') r = false;
       const from = approvals.has(cur.s) ? model.statuses.find((x) => x.id === cur.s) : null;
-      const a = cur.a || (from ? (from.approvedVia ? String(t.id) === String(from.approvedVia) : !NEGATIVE.test(name.get(t.to) || '')) : false);
+      // approved by leaving the approval step through its approve transition (or, when the workflow does not name
+      // one, a directed transition to a positive outcome; a "from any status" transition never approves);
+      // work that leaves a done status for an open one needs approving again
+      const reopened = cat.get(cur.s) === 'DONE' && cat.get(t.to) !== 'DONE';
+      const a = (cur.a && !reopened) || (from ? (from.approvedVia ? String(t.id) === String(from.approvedVia) : t.type !== 'GLOBAL' && !NEGATIVE.test(name.get(t.to) || '')) : false);
       const k = k3(t.to, r, a);
       if (seen.has(k)) continue;
       seen.set(k, { s: t.to, r, a, prev: k3(cur.s, cur.r, cur.a), via: t });

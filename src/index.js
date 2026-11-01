@@ -102,7 +102,7 @@ export async function loadSite({ asApp = false, fresh = false } = {}) {
   ]);
   // the cache keeps the time of its last full read, so every answer in it is at most 10 minutes old
   await kvs.set('cache:screens', { at: Object.keys(known).length ? cached.at : Date.now(), screens }).catch(() => {});
-  const screenHasResolution = [...Object.keys(screens).filter((id) => screens[id]), ...unreadable];
+  const screenHasResolution = Object.keys(screens).filter((id) => screens[id]);
   if (screenErrors.length) console.warn(`Interlock: ${screenErrors.length} screen reads failed`);
   const teamManagedProjects = new Set(projects.filter((p) => p.style === 'next-gen').map((p) => p.id));
   // a team-managed workflow belongs to its one project, so it is used there (no scheme to look up)
@@ -111,16 +111,16 @@ export async function loadSite({ asApp = false, fresh = false } = {}) {
     const pid = w.scope?.type === 'PROJECT' ? w.scope.project?.id : null;
     if (pid && byId[pid] && !usage[w.name]) usage[w.name] = [{ project: byId[pid].key, projectId: pid, issueType: null }];
   }
-  return { workflows, statuses, projects, usage, schemes, screenHasResolution, unreadableScreens: unreadable.length, teamManagedProjects: [...teamManagedProjects] };
+  return { workflows, statuses, projects, usage, schemes, screenHasResolution, unreadableScreenIds: unreadable, unreadableScreens: unreadable.length, teamManagedProjects: [...teamManagedProjects] };
 }
 
 export function checkSite(site, rules = {}) {
   const statuses = new Map(Object.entries(site.statuses));
-  const screens = new Set(site.screenHasResolution), tm = new Set(site.teamManagedProjects);
+  const screens = new Set(site.screenHasResolution), unreadableScreens = new Set(site.unreadableScreenIds || []), tm = new Set(site.teamManagedProjects);
   const t0 = Date.now();
   const results = site.workflows.map((w) => {
     const teamManaged = w.scope?.type === 'PROJECT' && tm.has(w.scope.project?.id);
-    const r = verify(w, statuses, { screenHasResolution: screens, teamManaged, mustPass: rules[w.id] || [] });
+    const r = verify(w, statuses, { screenHasResolution: screens, unreadableScreens, teamManaged, mustPass: rules[w.id] || [] });
     return { ...r, teamManaged, usage: site.usage[w.name] || [], scope: w.scope };
   });
   return { checkedAt: new Date().toISOString(), ms: Date.now() - t0, results, unreadableScreens: site.unreadableScreens || 0 };
@@ -242,7 +242,8 @@ resolver.define('traceItems', async (req) => {
   const { jql, flagged = [], since = null } = req.payload;
   const res = await jira(route`/rest/api/3/search/jql`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jql, maxResults: 50, fields: ['status'], expand: 'changelog' }),
+    // the 50 most recently changed of them
+    body: JSON.stringify({ jql: /order by/i.test(jql) ? jql : `${jql} ORDER BY updated DESC`, maxResults: 50, fields: ['status'], expand: 'changelog' }),
   });
   // search returns only part of a long history; fetch the newest page of the full changelog for those
   const issues = await pool(res.issues || [], 6, async (issue) => {
@@ -304,7 +305,7 @@ resolver.define('checkSite', async (req) => {
   console.log(`INTERLOCK_REPORT ${JSON.stringify({ workflows: report.results.length, withFindings: report.results.filter((r) => r.findings.length).length, findings: report.results.reduce((n, r) => n + r.findings.length, 0) })}`);
   // the UI draws each workflow, so it gets the models too (statuses and transitions only)
   const statuses = new Map(Object.entries(site.statuses));
-  report.models = Object.fromEntries(site.workflows.map((w) => [w.id, buildModel(w, statuses, { screenHasResolution: new Set(site.screenHasResolution) })]));
+  report.models = Object.fromEntries(site.workflows.map((w) => [w.id, buildModel(w, statuses, { screenHasResolution: new Set(site.screenHasResolution), unreadableScreens: new Set(site.unreadableScreenIds || []) })]));
   // a resolver answer is capped at 5 MB (about 1,800 workflows' diagrams): on sites that large, only the
   // workflows with findings come with their diagram
   if (Buffer.byteLength(JSON.stringify(report.models)) > 3.5e6) {
@@ -382,7 +383,7 @@ resolver.define('replay', async (req) => {
     await new Promise((r) => setTimeout(r, 5000));
     const later = await read();
     const last = steps.at(-1);
-    if (later.status !== last.status || later.resolution !== last.resolution) steps.push({ step: 'Six seconds later (automation)', ...later });
+    if (later.status !== last.status || later.resolution !== last.resolution) steps.push({ step: 'Five seconds later (automation)', ...later });
   }
   return { key: created.key, steps };
 });
@@ -521,10 +522,12 @@ async function statusesById(ids) {
 // not overwrite their choice (a "Won't Do" must stay "Won't Do").
 async function screenAsksResolution(screenId) {
   if (!screenId) return false;
-  const tabs = await jira(route`/rest/api/3/screens/${screenId}/tabs`).catch(() => []);
+  // a screen that cannot be read counts as asking: the fix then leaves that transition to the person
+  const tabs = await jira(route`/rest/api/3/screens/${screenId}/tabs`).catch(() => null);
+  if (!tabs) return true;
   for (const tab of tabs) {
-    const fields = await jira(route`/rest/api/3/screens/${screenId}/tabs/${tab.id}/fields`).catch(() => []);
-    if (fields.some((f) => f.id === 'resolution')) return true;
+    const fields = await jira(route`/rest/api/3/screens/${screenId}/tabs/${tab.id}/fields`).catch(() => null);
+    if (!fields || fields.some((f) => f.id === 'resolution')) return true;
   }
   return false;
 }
@@ -647,6 +650,7 @@ async function checkWorkflowsInner(payload) {
   const report = await agentReport(site);
   const project = payload?.projectKey && String(payload.projectKey).toUpperCase();
   const projectId = project && site.projects.find((p) => p.key === project)?.id;
+  if (project && !projectId) return { error: `No project with key ${project} on this site.` };
   const results = report.results.filter((r) => !project || r.usage.some((u) => u.project === project) || r.scope?.project?.id === projectId);
   return {
     checked: results.length, msToCheck: report.ms,

@@ -69,7 +69,7 @@ button, select { font: inherit; color: inherit; }
 .il-lever:has(.proj) .name { -webkit-line-clamp: 3; }
 .il-lever-key { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 14px 0; font-size: 11px; color: var(--il-subtle, #626f86); }
 .il-lever-key > span { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; color: var(--il-red); }
-.il-lever-key .live { background: var(--il-red); color: #fff; border-radius: 999px; padding: 0 7px; }
+.il-lever-key .live { background: var(--ds-background-danger-bold, #c9372c); color: var(--ds-text-inverse, #fff); border-radius: 999px; padding: 0 7px; }
 .il-lever .count { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: 12px; color: var(--il-red); }
 
 /* the track diagram on its enamel panel */
@@ -144,7 +144,7 @@ button, select { font: inherit; color: inherit; }
 .il-rule-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
 .il-rule-form select { padding: 4px 6px; border: 1px solid var(--il-border); border-radius: 4px; background: var(--il-surface); max-width: 150px; }
 
-.il-boot { display: grid; place-items: center; align-content: center; gap: 14px; height: 100vh; background: var(--il-enamel); color: var(--il-ink); }
+.il-boot { display: grid; place-items: center; align-content: center; gap: 14px; height: 100vh; background: var(--il-enamel); color: #1d2620; }
 .il-boot-track { display: flex; gap: 22px; padding: 10px 24px; border-top: 3px solid var(--il-track); }
 .il-boot .il-lamp { animation: il-blink 1s ease-in-out infinite; }
 @keyframes il-blink { 50% { opacity: 0.25; } }
@@ -161,7 +161,7 @@ button, select { font: inherit; color: inherit; }
 .il-evidence.now { background: var(--ds-background-danger, #ffeceb); color: var(--ds-text-danger, #ae2e24); font-weight: 600; }
 .il-evidence.latent { background: var(--ds-background-warning, #fff7d6); color: var(--ds-text-warning, #7f5f01); }
 .il-live { color: var(--il-red); }
-.il-lever .live { background: var(--il-red); color: #fff; border-radius: 999px; padding: 0 7px; font-size: 11px; margin-right: 4px; }
+.il-lever .live { background: var(--ds-background-danger-bold, #c9372c); color: var(--ds-text-inverse, #fff); border-radius: 999px; padding: 0 7px; font-size: 11px; margin-right: 4px; }
 
 .il-fix { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--il-border); }
 .il-fix h4 { margin: 0 0 4px; font-size: 13px; }
@@ -243,3 +243,6 @@ button, select { font: inherit; color: inherit; }
 
 /* items only in statuses this finding is not about: context, in a quieter amber */
 .il-evidence.other-only { background: color-mix(in srgb, var(--il-amber) 14%, transparent); color: var(--il-text); }
+
+.il-notice.error { background: var(--ds-background-danger, #ffeceb); color: var(--ds-text-danger, #ae2e24); }
+.il-notice .il-link + .il-link { margin-left: 8px; }

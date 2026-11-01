@@ -124,6 +124,25 @@ test('a rule is checked on every arrival: reopening and closing again without re
   assert.equal(verify(ok, statuses, { mustPass: [{ target: '4', via: '99' }] }).findings.filter((x) => x.property === 'ruleStale').length, 1);
 });
 
+test('approvals: a global close never approves, and reopened work must be approved again', () => {
+  const st = new Map([...statuses, ['6', { name: 'Awaiting approval', category: 'IN_PROGRESS' }], ['7', { name: 'Declined', category: 'DONE' }]]);
+  const w = (extra) => ({ id: 'w', name: 'W', statuses: [{ statusReference: '1' }, { statusReference: '6', properties: { 'approval.groups': 'cab' } }, { statusReference: '4' }, { statusReference: '7' }],
+    transitions: [{ id: '0', type: 'INITIAL', toStatusReference: '1' }, tr('1', 'Ask', ['1'], '6'), tr('2', 'Approve', ['6'], '4', { actions: setRes }), tr('3', 'Decline', ['6'], '7', { actions: setRes }), ...extra] });
+  const skipped = (wf) => verify(wf, st).findings.filter((f) => f.property === 'approvalSkipped').map((f) => f.route.hops.map((h) => h.transition).join());
+  assert.deepEqual(skipped(w([tr('8', 'Close', null, '4', { actions: setRes })])).length, 1);
+  // Close is only reachable from In Progress, and In Progress only by reopening finished work
+  const st2 = new Map([...st]);
+  const w2 = { ...w([tr('4', 'Reopen', ['4'], '2', { actions: clearRes }), tr('5', 'Close', ['2'], '4', { actions: setRes })]) };
+  w2.statuses = [...w2.statuses, { statusReference: '2' }];
+  assert.deepEqual(verify(w2, st2).findings.filter((f) => f.property === 'approvalSkipped').map((f) => f.route.hops.map((h) => h.transition).join()), ['Ask,Approve,Reopen,Close']);
+});
+
+test('a screen Interlock cannot read never invents a reopened-but-resolved finding', () => {
+  const t1 = tr('1', 'Start', ['1'], '2', { transitionScreen: { parameters: { screenId: '77' } } });
+  const w = wf([t1, tr('2', 'Finish', ['2'], '4', { actions: setRes }), tr('3', 'Reopen', ['4'], '2', { actions: clearRes })], ['1', '2', '4']);
+  assert.deepEqual(verify(w, statuses, { unreadableScreens: new Set(['77']) }).findings, []);
+});
+
 // ---------- the history trace ----------
 import { lastStatusChange, waysOf } from '../engine/trace.mjs';
 const h = (created, ...items) => ({ created, items });
