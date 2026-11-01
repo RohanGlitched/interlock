@@ -61,6 +61,12 @@ export default function App() {
     });
   }, [report, rules]);
 
+  // the lever order is set once, when the proof arrives (most findings first); counts that arrive later
+  // add their badges without moving anything under the pointer
+  useEffect(() => {
+    if (results.length && !frozen) setFrozen([...results].sort((a, b) => b.findings.length - a.findings.length || a.workflow.name.localeCompare(b.workflow.name)).map((x) => x.workflow.id));
+  }, [results, frozen]);
+
   if (error) return <div className="il-empty"><h1>Interlock could not read this site's workflows</h1><p>{error}</p><p>Interlock needs a Jira administrator to open it, because workflows are site configuration.</p><button className="il-btn" onClick={() => run(true)}>Check again</button></div>;
   if (!report) return <Boot />;
 
@@ -418,7 +424,7 @@ function Fix({ f, result, onFixed }) {
       ) : state.note ? <p className="il-note">{state.note}</p> : <p className="il-err">Jira rejected the change: {(state.errors || []).join('; ')}</p>)}
       {state.step === 'applying' && <p className="il-note">Saving the workflow and proving the site again…</p>}
       {state.step === 'error' && <p className="il-err">{state.error}</p>}
-      {obs?.bad > 0 && <p className="il-note">The fix stops new cases. The {obs.bad} work items already affected need a bulk change: <button className="il-link" onClick={() => openPath(`/issues/?jql=${encodeURIComponent(obs.jql)}`)}>open them</button>.</p>}
+      {obs?.bad > 0 && <p className="il-note">The fix stops new cases. {obs.bad === 1 ? 'The 1 work item already affected needs' : `The ${obs.bad} work items already affected need`} a bulk change: <button className="il-link" onClick={() => openPath(`/issues/?jql=${encodeURIComponent(obs.jql)}`)}>open them</button>.</p>}
     </div>
   );
 }

@@ -18,7 +18,7 @@ export function layout(model) {
     // from to-do statuses through in-progress ones to done ones
     // from to-do statuses through in-progress ones to done ones, wrapped three to a row so it stays legible
     const line = [...model.statuses].sort((a, b) => ORDER[a.category] - ORDER[b.category]);
-    const per = line.length > 4 ? 3 : line.length;
+    const per = Math.min(3, line.length);
     const pos = new Map(line.map((s, i) => [s.id, { x: LEFT + (i % per) * COL, y: TOP + Math.floor(i / per) * ROW }]));
     return { pos, width: LEFT * 2 + (per - 1) * COL + BLOCK_W, height: TOP + Math.ceil(line.length / per) * ROW + 60 };
   } else {
