@@ -299,6 +299,13 @@ resolver.define('checkSite', async (req) => {
   // the UI draws each workflow, so it gets the models too (statuses and transitions only)
   const statuses = new Map(Object.entries(site.statuses));
   report.models = Object.fromEntries(site.workflows.map((w) => [w.id, buildModel(w, statuses, { screenHasResolution: new Set(site.screenHasResolution) })]));
+  // a resolver answer is capped at 5 MB (about 1,800 workflows' diagrams): on sites that large, only the
+  // workflows with findings come with their diagram
+  if (Buffer.byteLength(JSON.stringify(report.models)) > 3.5e6) {
+    const keep = new Set(report.results.filter((r) => r.findings.length).map((r) => r.workflow.id));
+    report.models = Object.fromEntries(Object.entries(report.models).filter(([id]) => keep.has(id)));
+    report.modelsPartial = true;
+  }
   report.projects = site.projects;
   return report;
 });

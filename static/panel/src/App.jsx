@@ -63,8 +63,9 @@ export default function App() {
     if (!report) return [];
     return report.results.map((r) => {
       const wfRules = rules[r.workflow.id];
+      const hasModel = !!report.models[r.workflow.id];
       const model = { ...report.models[r.workflow.id], teamManaged: r.teamManaged };
-      const all = wfRules?.length || report.rules?.[r.workflow.id]?.length ? check(model, { mustPass: wfRules || [] }) : r.findings;
+      const all = hasModel && (wfRules?.length || report.rules?.[r.workflow.id]?.length) ? check(model, { mustPass: wfRules || [] }) : r.findings;
       const isIntended = (f) => intended[`${r.workflow.id}|${f.property}|${f.subject || ''}`];
       return { ...r, findings: all.filter((f) => !isIntended(f)), intended: all.filter(isIntended).map((f) => ({ ...f, record: isIntended(f) })) };
     });
@@ -142,7 +143,9 @@ export default function App() {
           </ul>
         </nav>
         <main className="il-main">
-          <Diagram key={sel.workflow.id} model={model} result={sel} focus={focus} />
+          {report.models[sel.workflow.id]
+            ? <Diagram key={sel.workflow.id} model={model} result={sel} focus={focus} />
+            : <div className="il-empty small"><p>This site has so many workflows that Interlock sends diagrams only for the ones with findings. {sel.workflow.name} has none: every property holds for every reachable state.</p></div>}
         </main>
         <Table key={sel.workflow.id} result={sel} model={model} focus={focus} setFocus={setFocus} replays={replays} setReplays={setReplays} onFixed={recheck} onIntended={markIntended}
           fixes={Object.values(report.fixes || {}).filter((x) => x.workflowId === sel.workflow.id)} onUndoFix={async (fx) => {
@@ -423,7 +426,7 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
           </ul>
         </section>
       )}
-      <Rules key={result.workflow.id} model={model} rules={rules} setRules={setRules} />
+      {model.statuses && <Rules key={result.workflow.id} model={model} rules={rules} setRules={setRules} />}
     </aside>
   );
 }
