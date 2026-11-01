@@ -23,7 +23,8 @@ export function buildModel(workflow, statuses, { screenHasResolution = new Set()
   const props = new Map(workflow.statuses.map((s) => [s.statusReference, s.properties || {}]));
   // Jira Service Management marks an approval step with approval.* properties on the status
   const st = ids.map((id) => ({ id, name: statuses.get(id)?.name || id, category: statuses.get(id)?.category || 'IN_PROGRESS',
-    approval: Object.keys(props.get(id) || {}).some((k) => k.startsWith('approval.')) }));
+    approval: Object.keys(props.get(id) || {}).some((k) => k.startsWith('approval.')),
+    approvedVia: props.get(id)?.['approval.transition.approved'] || null }));
   let initial = null;
   const transitions = [];
   for (const t of workflow.transitions) {
@@ -125,7 +126,8 @@ function exploreApproval(model, approvals) {
       if (model.teamManaged) r = cat.get(t.to) === 'DONE';
       else if (t.resolution === 'set') r = true;
       else if (t.resolution === 'clear') r = false;
-      const a = cur.a || (approvals.has(cur.s) && !NEGATIVE.test(name.get(t.to) || ''));
+      const from = approvals.has(cur.s) ? model.statuses.find((x) => x.id === cur.s) : null;
+      const a = cur.a || (from ? (from.approvedVia ? String(t.id) === String(from.approvedVia) : !NEGATIVE.test(name.get(t.to) || '')) : false);
       const k = k3(t.to, r, a);
       if (seen.has(k)) continue;
       seen.set(k, { s: t.to, r, a, prev: k3(cur.s, cur.r, cur.a), via: t });
@@ -216,6 +218,8 @@ export function verify(workflow, statuses, opts = {}) {
   const model = buildModel(workflow, statuses, opts);
   const states = explore(model).size;
   const findings = check(model, opts);
-  const held = Object.keys(PROPERTIES).filter((p) => p !== 'mustPass' && !findings.some((f) => f.property === p));
+  // a property only "holds" where it applies: approval coverage needs an approval step to cover
+  const hasApproval = model.statuses.some((s) => s.approval);
+  const held = Object.keys(PROPERTIES).filter((p) => p !== 'mustPass' && (p !== 'approvalSkipped' || hasApproval) && !findings.some((f) => f.property === p));
   return { workflow: { id: model.id, name: model.name }, statuses: model.statuses.length, transitions: model.transitions.length, states, findings, held };
 }

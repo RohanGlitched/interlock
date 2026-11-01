@@ -182,7 +182,7 @@ export async function recordProof(report, by) {
   history = history.slice(0, 60);
   while (history.length > 1 && JSON.stringify(history).length > 150000) history.pop();
   await kvs.set('watch:history', history);
-  const last = { at, by, workflows: report.results.length, withFindings: report.results.filter((r) => r.findings.length).length };
+  const last = { at, by, workflows: report.results.length, withFindings: report.results.filter((r) => r.findings.length).length, unreadableScreens: report.unreadableScreens || 0 };
   await kvs.set('watch:last', last);
   return { last, changes };
 }
@@ -230,6 +230,7 @@ resolver.define('checkSite', async (req) => {
   report.rules = rules;
   report.watch = await recordProof(report, req.context.accountId).catch(() => null);
   report.intended = (await kvs.get('intended').catch(() => null)) || {};
+  report.fixes = (await kvs.get('fixes').catch(() => null)) || {};
   // a compact line per workflow with findings, so a proof can be audited from the app's logs
   console.log('INTERLOCK_REPORT ' + JSON.stringify(report.results.filter((r) => r.findings.length).map((r) => ({
     w: r.workflow.name, p: [...new Set(r.usage.map((u) => u.project))], f: r.findings.map((f) => `${f.property}:${f.subject || ''}`),
@@ -263,7 +264,7 @@ resolver.define('replay', async (req) => {
   }
   const created = await jira(route`/rest/api/3/issue`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields: { project: { key: project }, issuetype: { id: type }, summary: `Interlock replay: ${label}`.slice(0, 250), labels: ['interlock-replay'] } }),
+    body: JSON.stringify({ fields: { project: { key: project }, issuetype: { id: type }, summary: `Interlock replay: ${label}`.slice(0, 250) } }),
   });
   const steps = [];
   const read = async () => {
@@ -494,13 +495,19 @@ resolver.define('fix', async (req) => {
       changed.push(t.name);
     }
   } else throw new Error('Interlock can repair resolution findings automatically; other findings need a person to redesign the workflow.');
-  if (!changed.length) return { changed, note: 'Nothing to change: every transition into this status already sets the resolution or asks the person for one.' };
+  if (!changed.length) return { changed, note: property === 'openResolved'
+    ? 'Nothing to change: every transition back to this status from a done status already clears the resolution.'
+    : 'Nothing to change: every transition into this status already sets the resolution or asks the person for one.' };
   const statuses = st.map((s) => ({ id: s.id, name: s.name, statusCategory: s.statusCategory, statusReference: s.id }));
   const update = { statuses, workflows: [{ id: wf.id, version: wf.version, name: wf.name, description: wf.description, statuses: wf.statuses, transitions: wf.transitions, startPointLayout: wf.startPointLayout }] };
   const validation = await jira(route`/rest/api/3/workflows/update/validation`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ payload: update }) });
   if (validation.errors?.length) return { changed, resolutionName, valid: false, errors: validation.errors.map((e) => e.message || JSON.stringify(e)) };
   if (mode !== 'apply' && mode !== 'undo') return { changed, resolutionName, valid: true };
   await jira(route`/rest/api/3/workflows/update`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(update) });
+  const fixes = (await kvs.get('fixes')) || {};
+  if (mode === 'undo') delete fixes[workflowId];
+  else fixes[workflowId] = { property, status, before, transitions: changed, at: new Date().toISOString(), name: wf.name };
+  await kvs.set('fixes', fixes);
   return { changed, resolutionName, valid: true, applied: true, before };
 });
 

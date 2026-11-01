@@ -131,6 +131,11 @@ export default function App() {
           <Diagram key={sel.workflow.id} model={model} result={sel} focus={focus} />
         </main>
         <Table result={sel} model={model} focus={focus} setFocus={setFocus} replays={replays} setReplays={setReplays} onFixed={recheck} onIntended={markIntended}
+          lastFix={report.fixes?.[sel.workflow.id]} onUndoFix={async (fx) => {
+            setNotice({ msg: 'Taking the fix back and proving the site again…' });
+            try { await invoke('fix', { workflowId: sel.workflow.id, property: fx.property, status: fx.status, before: fx.before, mode: 'undo' }); await recheck(`Undone: ${fx.transitions.join(', ')} in ${fx.name} are back as they were.`); }
+            catch (e) { setNotice({ msg: 'Could not undo the fix: ' + (e.message || e) }); }
+          }}
           rules={rules[sel.workflow.id] || []} setRules={(r) => { setRules((x) => ({ ...x, [sel.workflow.id]: r })); invoke('saveRules', { workflowId: sel.workflow.id, rules: r }).catch(() => {}); }} />
       </div>
     </div>
@@ -269,7 +274,7 @@ function Legend({ teamManaged }) {
 }
 
 // ---------- the interlocking table ----------
-function Table({ result, model, focus, setFocus, replays, setReplays, rules, setRules, onFixed, onIntended }) {
+function Table({ result, model, focus, setFocus, replays, setReplays, rules, setRules, onFixed, onIntended, lastFix, onUndoFix }) {
   const usage = result.usage.find((u) => u.project);
   async function replay(f) {
     const k = `${result.workflow.id}:${f.id}`;
@@ -344,6 +349,9 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
           );
         })}
       </ol>
+      {lastFix && (
+        <p className="il-lastfix">Interlock changed this workflow on {new Date(lastFix.at).toLocaleDateString()}: {lastFix.transitions.join(', ')}. <button className="il-link" onClick={() => onUndoFix(lastFix)}>Undo that fix</button></p>
+      )}
       {result.intended?.length > 0 && (
         <section className="il-intended">
           <h3>Recorded as intended</h3>
@@ -544,7 +552,7 @@ function Watch({ stamp }) {
         <Lamp state={fresh && count(latest, 'new') ? 'red' : 'green'} />
         <span>
           Watched daily. Last proof {when(w.last.at)}{w.last.by === 'daily watch' ? ' by the daily watch' : ''}:{' '}
-          {fresh ? <>{count(latest, 'new') ? <b>{plural(count(latest, 'new'), 'new finding', 'new findings')}</b> : null}{count(latest, 'new') && count(latest, 'fixed') ? ', ' : ''}{count(latest, 'fixed') ? plural(count(latest, 'fixed'), 'finding fixed', 'findings fixed') : ''} since the proof before.</> : 'nothing changed since the proof before.'}
+          {w.last.unreadableScreens ? `${w.last.unreadableScreens} transition screens could not be read, so this proof was not compared with the one before.` : fresh ? <>{count(latest, 'new') ? <b>{plural(count(latest, 'new'), 'new finding', 'new findings')}</b> : null}{count(latest, 'new') && count(latest, 'fixed') ? ', ' : ''}{count(latest, 'fixed') ? plural(count(latest, 'fixed'), 'finding fixed', 'findings fixed') : ''} since the last proof.</> : 'nothing changed since the last proof.'}
         </span>
         {w.history?.length > 0 && <span className="il-watch-more">Show history</span>}
       </summary>
