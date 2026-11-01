@@ -180,6 +180,8 @@ function Diagram({ model, result, focus }) {
   const routeKey = new Set(route.map((h) => `${h.transitionId}:${h.from}`));
   const onRoute = new Set(route.length ? [model.initial, ...route.flatMap((h) => [h.from, h.to])] : []);
   const trainRef = useRef(null), pathRefs = useRef({});
+  // the whole workflow fits the frame by default; zooming in lets the frame scroll
+  const [zoom, setZoom] = useState(1);
 
   // run a lit train along the focused route, hop by hop
   useEffect(() => {
@@ -211,8 +213,14 @@ function Diagram({ model, result, focus }) {
 
   const globals = model.transitions.filter((t) => t.type === 'GLOBAL');
   return (
-    <div className="il-diagram-wrap">
-      <svg className={`il-diagram ${route.length ? 'focused' : ''}`} viewBox={`0 0 ${width} ${height}`} style={{ maxWidth: width * (width < 900 ? 1.7 : 1), minWidth: Math.min(width, 380) }} role="img" aria-label={`Track diagram of ${result.workflow.name}`}>
+    <div className={`il-diagram-wrap ${zoom > 1 ? 'zoomed' : 'fit'}`}>
+      <div className="il-zoom" role="group" aria-label="Zoom the track diagram">
+        <button onClick={() => setZoom((z) => Math.max(1, z - 0.5))} disabled={zoom <= 1} aria-label="Zoom out">−</button>
+        <button onClick={() => setZoom(1)} disabled={zoom === 1}>Fit</button>
+        <button onClick={() => setZoom((z) => Math.min(4, z + 0.5))} aria-label="Zoom in">+</button>
+      </div>
+      <svg className={`il-diagram ${route.length ? 'focused' : ''}`} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet"
+        style={zoom > 1 ? { width: width * zoom * 0.6, height: height * zoom * 0.6 } : { maxHeight: height * 1.7, maxWidth: width * 1.7 }} role="img" aria-label={`Track diagram of ${result.workflow.name}`}>
         <defs>
           <filter id="il-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.4" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
         </defs>
