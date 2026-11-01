@@ -195,7 +195,8 @@ export async function measure(site, report) {
 const findingKey = (f) => `${f.property}|${f.subject || ''}`;
 function snapshotOf(report) {
   // only workflows with findings are kept, so the snapshot stays small on a site with thousands of workflows
-  return Object.fromEntries(report.results.filter((r) => r.findings.length).map((r) => [r.workflow.id, { name: r.workflow.name, findings: r.findings.map((f) => ({ key: findingKey(f), title: f.title, subject: f.subject })) }]));
+  const own = (r) => r.findings.filter((f) => f.property !== 'mustPass' && f.property !== 'ruleStale');
+  return Object.fromEntries(report.results.filter((r) => own(r).length).map((r) => [r.workflow.id, { name: r.workflow.name, findings: own(r).map((f) => ({ key: findingKey(f), title: f.title, subject: f.subject })) }]));
 }
 export async function recordProof(report, by) {
   const snap = snapshotOf(report), prev = await kvs.get('watch:snapshot');
@@ -677,6 +678,7 @@ async function agentReport(site) {
   for (const r of report.results) {
     const isIntended = (f) => intended[`${r.workflow.id}|${f.property}|${f.subject || ''}`];
     r.intended = r.findings.filter(isIntended);
+    r.intendedBy = Object.fromEntries(r.intended.map((f) => { const x = isIntended(f); return [f.id, { recordedBy: x.by, reason: x.reason, at: x.at }]; }));
     r.findings = r.findings.filter((f) => !isIntended(f));
   }
   return report;
@@ -707,7 +709,7 @@ async function getWorkflowFindingsInner(payload) {
   const w = findWorkflow(site, payload?.workflow);
   if (!w) return { error: `No single workflow matches "${payload?.workflow}". Give its full name${candidates(site, payload?.workflow)}.` };
   const r = (await agentReport({ ...site, workflows: [w] })).results[0];
-  return { workflow: w.name, statuses: r.statuses, transitions: r.transitions, reachableStates: r.states, propertiesThatHold: r.held, ...(r.undecided?.length ? { undecided: r.undecided } : {}), ...(r.noInitial ? { noCreateTransition: true } : {}), findings: r.findings.map((f) => ({ ...brief(f), why: f.why })) };
+  return { workflow: w.name, statuses: r.statuses, transitions: r.transitions, reachableStates: r.states, propertiesThatHold: r.held, ...(r.undecided?.length ? { undecided: r.undecided } : {}), ...(r.noInitial ? { noCreateTransition: true } : {}), ...(r.intended?.length ? { recordedAsIntended: r.intended.map((f) => ({ ...brief(f), ...(r.intendedBy?.[f.id] || {}) })) } : {}), findings: r.findings.map((f) => ({ ...brief(f), why: f.why })) };
 }
 
 // "Can work reach <target> without passing <through>?" answered for every route, not a sample.

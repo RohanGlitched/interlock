@@ -326,6 +326,7 @@ function Diagram({ model, result, focus }) {
   // (a rule finding is about its target and the status it skips; one nobody can use, about the transition's ends)
   const focusSet = focus ? new Set(focus.property === 'mustPass' ? [focus.rule?.target, focus.rule?.via].filter(Boolean)
     : focus.property === 'nobody' ? model.transitions.filter((t) => String(t.id) === String(focus.transition)).flatMap((t) => [...t.from, t.to])
+    : focus.property === 'ruleStale' ? [focus.rule?.target, focus.rule?.via].filter((id) => model.statuses.some((x) => x.id === id))
     : result.findings.filter((f) => f.property === focus.property && f.status).map((f) => f.status)) : null;
   const unreachable = new Set(result.findings.filter((f) => f.property === 'unreachable').map((f) => f.status));
   const route = focus?.route?.hops || [];
@@ -376,7 +377,7 @@ function Diagram({ model, result, focus }) {
   }, [focus, width, height, vertical]); // eslint-disable-line react-hooks/exhaustive-deps
   const labelSize = Math.min(18, Math.max(11, 12 / (fitScale * zoom)));
   // status names at about 11 px on screen or more, whatever the scale (wrapped to fit their block)
-  const statusSize = Math.min(17, Math.max(13, 11 / (fitScale * zoom)));
+  const statusSize = Math.min(20, Math.max(13, 12 / (fitScale * zoom)));
   const globals = model.transitions.filter((t) => t.type === 'GLOBAL');
   const floorY = Math.max(...[...pos.values()].map((p) => p.y)) + BLOCK_H;
   return (
@@ -394,7 +395,7 @@ function Diagram({ model, result, focus }) {
         {globals.length > 0 && (vertical
           ? <line className="il-rail" x1="16" x2="16" y1="34" y2={height - 20} />
           : <line className="il-rail" x1="16" x2={width - 16} y1="34" y2="34" />)}
-        {globals.length > 0 && <text className="il-rail-label" x="18" y="24">From any status</text>}
+        {globals.length > 0 && <text className="il-rail-label" x="18" y="24" style={{ fontSize: Math.min(15, Math.max(11, 11 / (fitScale * zoom))) }}>From any status</text>}
         {globals.map((t, k) => {
           const b = pos.get(t.to); if (!b) return null;
           const d = globalPath(b, k, vertical), on = routeKey.has(`${t.id}:${route.find((h) => h.transitionId === t.id)?.from}`);
@@ -412,14 +413,14 @@ function Diagram({ model, result, focus }) {
           );
         })}
         {model.statuses.map((s) => {
-          const p = pos.get(s.id), state = unreachable.has(s.id) ? 'amber' : focusSet ? (focusSet.has(s.id) ? 'red' : s.id === model.initial ? 'green' : 'off') : bad.has(s.id) ? 'red' : 'green';
+          const p = pos.get(s.id), state = unreachable.has(s.id) && !(focusSet && focus?.property === 'unreachable' && focusSet.has(s.id)) ? 'amber' : focusSet ? (focusSet.has(s.id) ? 'red' : s.id === model.initial ? 'green' : 'off') : bad.has(s.id) ? 'red' : 'green';
           const i = order.get(s.id) ?? 30;
           return (
             <g key={s.id} className={`il-block ${s.category.toLowerCase()} ${state} ${onRoute.has(s.id) ? 'onroute' : ''}`} transform={`translate(${p.x},${p.y})`} style={{ '--t': `${i * 90}ms` }}>
               <rect width={BLOCK_W} height={BLOCK_H} rx="5" />
               <circle className="lamp" cx="16" cy={BLOCK_H / 2} r="6" />
               <StatusLabel name={s.name} size={statusSize} />
-              {s.id === model.initial && <text className="start" x="0" y="-8">Created here</text>}
+              {s.id === model.initial && <text className="start" x="0" y="-8" style={{ fontSize: Math.min(15, Math.max(11, 11 / (fitScale * zoom))) }}>Created here</text>}
             </g>
           );
         })}
