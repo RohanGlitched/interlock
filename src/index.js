@@ -29,8 +29,14 @@ export async function loadSite() {
     if (page.isLast || !page.values.length) break;
     startAt += page.values.length;
   }
-  const st = await jira(route`/rest/api/3/statuses/search?maxResults=200`);
-  const statuses = Object.fromEntries(st.values.map((s) => [s.id, { name: s.name, category: s.statusCategory }]));
+  // a large site has thousands of statuses; the search pages at 200
+  const statuses = {};
+  for (let startAt = 0; ;) {
+    const page = await jira(route`/rest/api/3/statuses/search?startAt=${startAt}&maxResults=200`);
+    for (const s of page.values) statuses[s.id] = { name: s.name, category: s.statusCategory };
+    if (page.isLast || !page.values.length) break;
+    startAt += page.values.length;
+  }
   const projects = [];
   for (let startAt = 0; ;) {
     const page = await jira(route`/rest/api/3/project/search?startAt=${startAt}&maxResults=50`);
@@ -62,6 +68,12 @@ export async function loadSite() {
   });
   if (screenErrors.length) console.warn('screens unreadable', screenErrors.slice(0, 3));
   const teamManagedProjects = new Set(projects.filter((p) => p.style === 'next-gen').map((p) => p.id));
+  // a team-managed workflow belongs to its one project, so it is used there (no scheme to look up)
+  const byId = Object.fromEntries(projects.map((p) => [p.id, p]));
+  for (const w of workflows) {
+    const pid = w.scope?.type === 'PROJECT' ? w.scope.project?.id : null;
+    if (pid && byId[pid] && !usage[w.name]) usage[w.name] = [{ project: byId[pid].key, projectId: pid, issueType: null }];
+  }
   return { workflows, statuses, projects, usage, screenHasResolution, teamManagedProjects: [...teamManagedProjects] };
 }
 

@@ -256,6 +256,7 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
                 <Lamp state={property === 'unreachable' ? 'amber' : 'red'} />
                 <span><b>{f.title}</b>{list.length === 1 ? f.subject : `${list.length} statuses`}</span>
               </button>
+              <Tiers f={f} obs={result.observed?.[property]} verdict={verdict} />
               <Evidence obs={result.observed?.[property]} property={property} />
               {list.length > 1 && (
                 <div className="il-chips" role="group" aria-label={f.title}>
@@ -297,6 +298,27 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
       </ol>
       <Rules model={model} rules={rules} setRules={setRules} />
     </aside>
+  );
+}
+
+// How far a finding has been taken, like a signal with three aspects: the proof says the route exists,
+// Jira's data says work items are already there, and a replay walked a real work item down the route.
+function Tiers({ f, obs, verdict }) {
+  const counted = f.property === 'doneUnresolved' || f.property === 'openResolved';
+  const tiers = [
+    { label: 'Proved', on: true, why: 'The model checker found this route among every reachable state.' },
+    { label: 'In your data', on: obs?.bad > 0, na: !counted, why: counted ? 'Work items in the projects using this workflow are already in this state.' : 'Jira data cannot show this kind of finding; replay the route instead.' },
+    { label: 'Replayed', on: !!verdict?.confirmed, na: !f.route, why: 'A new work item followed the route through Jira itself.' },
+  ];
+  return (
+    <ol className="il-tiers" aria-label="Evidence">
+      {tiers.map((t) => (
+        <li key={t.label} className={t.on ? 'on' : t.na ? 'na' : ''} title={t.why}>
+          <span className={`il-lamp ${t.on ? 'white' : ''}`} aria-hidden="true" />
+          {t.label}<span className="sr">{t.on ? ': yes' : t.na ? ': not applicable' : ': not yet'}</span>
+        </li>
+      ))}
+    </ol>
   );
 }
 
