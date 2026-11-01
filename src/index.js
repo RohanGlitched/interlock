@@ -697,6 +697,8 @@ async function checkWorkflowsInner(payload) {
       findings: r.findings.map(brief), recordedAsIntended: r.intended.length || undefined,
     })),
     totalWithFindings: results.filter((r) => r.findings.length).length,
+    // properties Interlock could not decide (a screen it cannot read, no done status, no create transition)
+    undecided: results.filter((r) => r.undecided?.length || r.noInitial).slice(0, 50).map((r) => ({ workflow: r.workflow.name, properties: r.noInitial ? ['everything: no create transition'] : r.undecided })),
   };
 }
 
@@ -720,12 +722,13 @@ async function proveRouteInner(payload) {
   if (target === via) return { error: 'The status to reach and the status to pass through are the same; name two different statuses.' };
   const r = checkSite({ ...site, workflows: [w] }, { [w.id]: [{ target, via }] }).results[0];
   if (r.noInitial) return { ruleHolds: null, answer: `${w.name} has no create transition, so there is no route to search; Interlock cannot say either way.` };
+  if (r.findings.some((x) => x.property === 'unreachable' && String(x.status) === String(target))) return { ruleHolds: null, unreachable: true, answer: `No route reaches ${payload.target} at all in ${w.name}, so the question does not arise. (That is a finding of its own: a status nothing can reach.)` };
   const f = r.findings.find((x) => x.property === 'mustPass');
   // `ruleHolds` is about the rule "every route to target passes through"; the answer sentence states the
   // finding plainly so it reads right whichever way the user phrased the question.
   return f
     ? { ruleHolds: false, canSkip: true, answer: `Work CAN reach ${payload.target} without passing ${payload.through}. The rule "${payload.target} only through ${payload.through}" is broken by this route.`, counterexample: brief(f).route }
-    : { ruleHolds: true, canSkip: false, answer: `Work can NOT reach ${payload.target} without passing ${payload.through}: every route to ${payload.target} goes through ${payload.through} (for a finished status, again after any rework). Interlock searched every route from creation.` };
+    : { ruleHolds: true, canSkip: false, answer: `Work can NOT reach ${payload.target} without passing ${payload.through}: every route to ${payload.target} goes through ${payload.through} (for a done status, again after finished work is reopened). Interlock searched every route from creation.` };
 }
 
 // Rovo and MCP callers who are not Jira admins cannot read workflow configuration; tell them so plainly.

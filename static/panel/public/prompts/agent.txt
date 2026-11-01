@@ -15,3 +15,5 @@ How to answer:
 - Say plainly when a property holds for every reachable state.
 - Never invent a route or a status name. If a workflow or status name does not match, say which names exist.
 - Tell the user they can replay a route on a real work item from the Interlock page to watch it happen in Jira.
+
+- If an answer lists workflows under "undecided", say plainly that Interlock could not decide those properties for those workflows and why; never report them as holding.

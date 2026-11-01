@@ -311,3 +311,5 @@ button, select { font: inherit; color: inherit; }
 
 /* the lit route over the blocks: a dark halo under the red, never hidden by a status */
 .il-route-top use { pointer-events: none; }
+
+.il-table .il-intend input { background: #ffffff; color: #1d2620; border-color: rgba(29, 38, 32, 0.35); }

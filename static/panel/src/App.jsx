@@ -91,6 +91,7 @@ export default function App() {
     if (!pick?.findings.length) return;
     setSelId(pick.workflow.id);
     setFocus(worstFinding(pick));
+    requestAnimationFrame(() => document.querySelector('.il-lever.pulled')?.scrollIntoView({ block: 'nearest' }));
   }, [report, results, touched, autoStage]); // eslint-disable-line react-hooks/exhaustive-deps
   const markIntended = async (r, f, reason, undo = false) => {
     const out = await invoke('markIntended', { workflowId: r.workflow.id, property: f.property, subject: f.subject, reason, undo });
@@ -182,7 +183,7 @@ export default function App() {
               <h2>{results.some((r) => r.undecided?.length || r.noInitial)
                 ? `No workflow has a route that goes wrong; ${results.filter((r) => r.undecided?.length || r.noInitial).length} could not be fully decided`
                 : `All ${results.length.toLocaleString()} workflows hold, in every reachable state`}</h2>
-              <p>{results.some((r) => r.undecided?.length || r.noInitial) ? 'Some properties depend on a transition screen Interlock cannot read, or a workflow has no create transition; those are named on each workflow. ' : ''}{results.some((r) => r.intended?.length) ? 'Routes recorded as intended are listed on their workflows. ' : ''}No other route leaves work done but unresolved, reopened but still resolved, stranded, or past an approval. To see what Interlock does when one does, add a small software project whose workflow has the shortcuts teams add over time.</p>
+              <p>{results.some((r) => r.undecided?.length || r.noInitial) ? 'Some properties depend on a transition screen Interlock cannot read, or a workflow has no create transition; those are named on each workflow. ' : ''}{results.some((r) => r.intended?.length) ? 'Routes recorded as intended are listed on their workflows. ' : ''}{results.some((r) => r.undecided?.length || r.noInitial || r.intended?.length) ? 'Apart from those, no' : 'No'} route leaves work done but unresolved, reopened but still resolved, stranded, or past an approval. To see what Interlock does when one does, add a small software project whose workflow has the shortcuts teams add over time.</p>
               <Demo primary onDone={async (msg) => { setTouched(true); await recheck(msg); setPendingSelect('Ship: Software delivery workflow'); }} />
             </div>
           ) : report.models[sel.workflow.id]
@@ -458,7 +459,8 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
       <p className="il-meta">{plural(result.statuses, 'status', 'statuses')}, {plural(result.transitions, 'transition', 'transitions')}, {plural(result.states, 'reachable state', 'reachable states')}{usage ? `, used in ${[...new Set(result.usage.map((u) => u.project))].join(', ')}` : ''}.</p>
       {!result.findings.length && !result.undecided?.length && !result.noInitial && <p className="il-held"><Lamp state="green" />Every property holds for every reachable state.</p>}
       {result.noInitial && <p className="il-note">This workflow has no create transition, so there is no route to prove.</p>}
-      {result.undecided?.length > 0 && <p className="il-note"><Lamp state="amber" /> Could not decide {result.undecided.map((p) => PROPERTIES[p]?.title.toLowerCase()).join(' or ')}: it depends on a transition screen Interlock cannot read. Check that screen's Resolution field by hand.</p>}
+      {result.undecided?.length > 0 && <p className="il-note"><Lamp state="amber" /> Could not decide {result.undecided.map((p) => PROPERTIES[p]?.title.toLowerCase()).join(' or ')}: {result.undecided.includes('stranded') && result.undecided.length === 1
+        ? 'this workflow has no done status, so there is nowhere work could finish.' : 'it depends on a transition screen Interlock cannot read. Check that screen\'s Resolution field by hand.'}</p>}
       <ol className="il-findings">
         {groupFindings(result.findings).map(({ property, list }) => {
           const active = list.find((f) => f.id === focus?.id);
@@ -550,7 +552,7 @@ function Tiers({ f, obs, statuses, verdict }) {
   // lit only for items in this finding's own statuses (when Jira's count per status is known)
   const own = obs?.byStatus ? statuses.reduce((n, s) => n + (obs.byStatus[s] || 0), 0) : obs?.bad || 0;
   const tiers = [
-    { label: 'Proved', aspect: 'white', on: true, why: 'The model checker found this route among every reachable state.' },
+    { label: 'Proved', aspect: 'white', on: true, why: f.route ? 'The model checker found this route among every reachable state.' : 'The model checker proved this over every reachable state.' },
     { label: 'In your data', aspect: 'amber', on: own > 0, na: !counted, why: counted ? 'Work items in the statuses this finding is about are already in this state.' : 'Jira data cannot show this kind of finding; replay the route instead.' },
     { label: 'Replayed', aspect: 'red', on: !!verdict?.confirmed, na: !f.route, why: 'A new work item followed the route through Jira itself.' },
   ];
