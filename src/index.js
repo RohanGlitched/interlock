@@ -615,8 +615,12 @@ resolver.define('fix', async (req) => {
     await kvs.set('fixes', fixes);
     return { changed, applied: true, note: 'Those transitions are no longer in the workflow, so there is nothing to put back.' };
   }
+  // a step into a status that is not done that itself sets a resolution is a design choice Interlock leaves to a person
+  const setters = property === 'openResolved' ? wf.transitions.filter((t) => t.type !== 'INITIAL' && cat[t.toStatusReference] !== 'DONE'
+    && (t.actions || []).some((a) => RES_ACTION(a) && a.parameters.value)).map((t) => `"${t.name}"`) : [];
   if (!changed.length) return { changed, note: property === 'openResolved'
-    ? 'Nothing to change: every step that reopens finished work on the way here already clears the resolution.'
+    ? (setters.length ? `Nothing for Interlock to change: ${setters.join(', ')} ${setters.length === 1 ? 'sets' : 'set'} a resolution on work that is not done. Remove that from the transition in the workflow editor if it is not intended.`
+      : 'Nothing for Interlock to change: the resolution comes from a screen or from when the work item was created. Check the Resolution field on the create, edit and transition screens.')
     : 'Nothing to change: every transition into this status already sets the resolution or asks the person for one.' };
   // statuses go back with their descriptions, or the update would blank them site-wide
   const statuses = st.map((s) => ({ id: s.id, name: s.name, description: s.description || '', statusCategory: s.statusCategory, statusReference: s.id }));

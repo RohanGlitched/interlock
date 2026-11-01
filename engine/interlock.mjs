@@ -156,6 +156,21 @@ function exploreApproval(model, approvals) {
   const k3 = (s, r, a) => `${s}|${r ? 1 : 0}|${a ? 1 : 0}`;
   const seen = new Map([[k3(model.initial, false, false), { s: model.initial, r: false, a: false, prev: null, via: null }]]);
   const queue = [{ s: model.initial, r: false, a: false }];
+  // when the workflow does not name the approve transition: one named like an approval, if the step has one;
+  // otherwise a move forward (not back to a to-do status, nor to a status the approval step is reached from)
+  const approveIds = new Map(), before = new Map();
+  for (const s of approvals) {
+    const out = usable.filter((t) => t.type !== 'GLOBAL' && t.from.includes(s));
+    approveIds.set(s, new Set(out.filter((t) => /approv|authori[sz]|accept/i.test(t.name) && !NEGATIVE.test(t.name)).map((t) => String(t.id))));
+    before.set(s, new Set(usable.filter((t) => t.to === s && t.type !== 'GLOBAL').flatMap((t) => t.from)));
+  }
+  const approves = (from, t) => {
+    if (from.approvedVia) return String(t.id) === String(from.approvedVia);
+    if (t.type === 'GLOBAL' || NEGATIVE.test(name.get(t.to) || '')) return false;
+    const named = approveIds.get(from.id);
+    if (named?.size) return named.has(String(t.id));
+    return cat.get(t.to) !== 'TODO' && !before.get(from.id)?.has(t.to);
+  };
   while (queue.length) {
     const cur = queue.shift();
     for (const t of usable) {
@@ -169,7 +184,10 @@ function exploreApproval(model, approvals) {
       // one, a directed transition to a positive outcome; a "from any status" transition never approves);
       // work that leaves a done status for an open one needs approving again
       const reopened = cat.get(cur.s) === 'DONE' && cat.get(t.to) !== 'DONE';
-      const a = (cur.a && !reopened) || (from ? (from.approvedVia ? String(t.id) === String(from.approvedVia) : t.type !== 'GLOBAL' && !NEGATIVE.test(name.get(t.to) || '')) : false);
+      // work closed as cancelled, declined... needs no approval, and moving it on to another done status
+      // (Canceled to Closed) does not make it a success; reopening it does
+      const settled = cat.get(t.to) === 'DONE' && NEGATIVE.test(name.get(t.to) || '');
+      const a = (cur.a && !reopened) || settled || (from ? approves(from, t) : false);
       const k = k3(t.to, r, a);
       if (seen.has(k)) continue;
       seen.set(k, { s: t.to, r, a, prev: k3(cur.s, cur.r, cur.a), via: t });

@@ -202,6 +202,17 @@ test('a workflow with no create transition holds nothing', () => {
   assert.equal(out.noInitial, true);
 });
 
+test('approvals: cancelled work closed later is not a skip; sending work back is not an approval', () => {
+  const st = new Map([['1', { name: 'Draft', category: 'TODO' }], ['2', { name: 'Awaiting approval', category: 'IN_PROGRESS', approval: true }], ['3', { name: 'In progress', category: 'IN_PROGRESS' }],
+    ['4', { name: 'Canceled', category: 'DONE' }], ['5', { name: 'Closed', category: 'DONE' }]]);
+  const approvalStatus = (w) => ({ ...w, statuses: w.statuses.map((s) => (s.statusReference === '2' ? { ...s, properties: { 'approval.groups': 'true' } } : s)) });
+  const base = [tr('1', 'Submit', ['1'], '2'), tr('2', 'Approve', ['2'], '3'), tr('3', 'Mark as canceled', ['2'], '4'), tr('4', 'Mark as closed', ['4'], '5'), tr('5', 'Close', ['3'], '5')];
+  const props = (ts) => verify(approvalStatus(wf(ts, ['1', '2', '3', '4', '5'])), st).findings.filter((f) => f.property === 'approvalSkipped').map((f) => f.subject);
+  assert.deepEqual(props(base), []);
+  // "Back to draft" from the approval step is not an approval: Draft -> Close then skips it
+  assert.deepEqual(props([...base, tr('6', 'Back to draft', ['2'], '1'), tr('7', 'Close draft', ['1'], '5')]), ['Closed']);
+});
+
 // ---------- the history trace ----------
 import { lastStatusChange, waysOf } from '../engine/trace.mjs';
 const h = (created, ...items) => ({ created, items });

@@ -118,7 +118,7 @@ export default function App() {
   // statuses no route reaches today get a quieter amber badge
   const countsOf = (r) => Object.entries(r.observed || {}).filter(([p]) => r.findings.some((f) => f.property === p)).reduce((acc, [p, o]) => {
     const own = o.byStatus ? r.findings.filter((f) => f.property === p).reduce((t, f) => t + (o.byStatus[f.subject] || 0), 0) : o.bad;
-    return { own: acc.own + own, left: acc.left + (o.bad - own) };
+    return { own: acc.own + own, left: acc.left + Math.max(0, o.bad - own - intendedCount(r, p, o)) };
   }, { own: 0, left: 0 });
   const liveOf = (r) => countsOf(r).own * 1e6 + countsOf(r).left; // ranks by explained items first
   const ranked = [...results].sort((a, b) => liveOf(b) - liveOf(a) || b.findings.length - a.findings.length || a.workflow.name.localeCompare(b.workflow.name));
@@ -203,11 +203,17 @@ function worstFinding(r) {
   return [...all].filter((f) => own(f) > 0).sort((a, b) => own(b) - own(a))[0] || all.find((f) => f.route?.hops?.length) || all[0] || null;
 }
 
+// Work items in statuses whose finding an admin recorded as intended: kept out of every count.
+function intendedCount(r, p, o) {
+  if (!o?.byStatus) return 0;
+  return (r.intended || []).filter((f) => f.property === p).reduce((t, f) => t + (o.byStatus[f.subject] || 0), 0);
+}
+
 // Workflows are ranked by work items a proved route explains, then by items left over, then by findings.
 function rankScore(r) {
   return Object.entries(r.observed || {}).filter(([p]) => r.findings.some((f) => f.property === p)).reduce((acc, [p, o]) => {
     const own = o.byStatus ? r.findings.filter((f) => f.property === p).reduce((t, f) => t + (o.byStatus[f.subject] || 0), 0) : o.bad;
-    return acc + own * 1e6 + (o.bad - own);
+    return acc + own * 1e6 + Math.max(0, o.bad - own - intendedCount(r, p, o));
   }, 0);
 }
 
@@ -216,7 +222,7 @@ function withCounts(report, counts) {
 }
 
 function summarise(results) {
-  const live = results.reduce((a, r) => a + Object.entries(r.observed || {}).filter(([p]) => r.findings.some((f) => f.property === p)).reduce((b, [, o]) => b + o.bad, 0), 0);
+  const live = results.reduce((a, r) => a + Object.entries(r.observed || {}).filter(([p]) => r.findings.some((f) => f.property === p)).reduce((b, [p, o]) => b + Math.max(0, o.bad - intendedCount(r, p, o)), 0), 0);
   // of those, the ones in a status a proved route reaches in that bad state today
   const onRoute = results.reduce((a, r) => a + Object.entries(r.observed || {}).filter(([p]) => r.findings.some((f) => f.property === p)).reduce((b, [p, o]) => {
     if (!o.byStatus) return b + o.bad;
@@ -448,7 +454,8 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
               </button>
               <Tiers f={f} obs={result.observed?.[property]} statuses={list.map((x) => x.subject)} verdict={verdict} />
               {result.observedError && (property === 'doneUnresolved' || property === 'openResolved') && <p className="il-evidence none">Jira could not count the work items: {result.observedError}</p>}
-              <Evidence obs={result.observed?.[property]} property={property} flagged={list.map((x) => x.subject)} fixAt={fixFor(property)?.at} />
+              <Evidence obs={result.observed?.[property]} property={property} flagged={list.map((x) => x.subject)} fixAt={fixFor(property)?.at}
+                intended={(result.intended || []).filter((x) => x.property === property).map((x) => x.subject)} />
               {list.length > 1 && (
                 <div className="il-chips" role="group" aria-label={f.title}>
                   {list.map((x) => <button key={x.id} aria-pressed={focus?.id === x.id} className={focus?.id === x.id ? 'on' : ''} onClick={() => setFocus(focus?.id === x.id ? null : x)}>{x.subject}</button>)}
@@ -542,13 +549,15 @@ function Tiers({ f, obs, statuses, verdict }) {
 
 // What Jira's own data says: how many work items in the projects using this workflow are already in
 // the state the proof says is reachable.
-function Evidence({ obs, property, flagged, fixAt }) {
+function Evidence({ obs, property, flagged, fixAt, intended = [] }) {
   const [trace, setTrace] = useState(null);
   if (!obs) return null;
   const noun = property === 'doneUnresolved' ? ['done work item is unresolved', 'done work items are unresolved'] : ['open work item still has a resolution', 'open work items still have a resolution'];
   const link = `/issues/?jql=${encodeURIComponent(obs.jql)}`;
   const byStatus = Object.entries(obs.byStatus || {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
-  const elsewhere = obs.byStatus ? obs.bad - byStatus.reduce((t, [, n]) => t + n, 0) : 0;
+  // items in a status recorded as intended are named as such, never as left over
+  const onPurpose = byStatus.filter(([s]) => intended.includes(s));
+  const elsewhere = obs.byStatus ? obs.bad - byStatus.filter(([s]) => flagged.includes(s) || intended.includes(s)).reduce((t, [, n]) => t + n, 0) : 0;
   // the finding's own statuses come first; the rest of the workflow's items are context, not this finding's evidence
   const own = obs.byStatus ? byStatus.filter(([s]) => flagged.includes(s)).reduce((t, [, n]) => t + n, 0) : obs.bad;
   if (obs.bad > 0) {
@@ -559,9 +568,10 @@ function Evidence({ obs, property, flagged, fixAt }) {
           : <>None in {flagged.join(', ')}. Elsewhere in this workflow, {obs.bad.toLocaleString()} of {obs.of.toLocaleString()} {obs.bad === 1 ? noun[0] : noun[1]}.</>}
           {' '}<button className="il-link" onClick={() => openPath(link)}>Show them</button>
           {' '}{!trace && <button className="il-link trace" onClick={async () => { setTrace('loading'); try { setTrace(await invoke('traceItems', { jql: obs.jql, flagged, since: fixAt })); } catch (e) { setTrace({ error: e.message }); } }}>How did they get there?</button>}</p>
-        {(byStatus.length > 0 || elsewhere > 0) && (
+        {(byStatus.length > 0 || elsewhere > 0 || onPurpose.length > 0) && (
           <p className="il-bystatus">
-            {own > 0 && byStatus.map(([s, n]) => <span key={s}><b>{n.toLocaleString()}</b> in {s}</span>)}
+            {own > 0 && byStatus.filter(([s]) => flagged.includes(s)).map(([s, n]) => <span key={s}><b>{n.toLocaleString()}</b> in {s}</span>)}
+            {onPurpose.map(([s, n]) => <span key={`i${s}`} className="other"><b>{n.toLocaleString()}</b> in {s} (recorded as intended)</span>)}
             {elsewhere > 0 && <span className="other"><b>{elsewhere.toLocaleString()}</b> in statuses no route leaves {property === 'doneUnresolved' ? 'unresolved' : 'resolved'} today: the workflow has changed since{fixAt ? ` (Interlock fixed it on ${new Date(fixAt).toLocaleDateString()})` : ', or something else put them there'}. Their history says which.</span>}
           </p>
         )}
