@@ -2,9 +2,11 @@
 
 # Interlock
 
-A Jira workflow is a small program. Teams rely on it for promises such as *"nothing is done without code review"*, *"done work is resolved"* and *"nothing gets stuck"*, and nobody checks those promises. A global transition added for a hotfix, a status copied from another project, or a transition screen without the Resolution field quietly breaks them. Dashboards then count finished work as unresolved, or reopened work as resolved, and release reports are wrong.
+A Jira workflow is a small program. Teams rely on it for promises such as *"nothing is done without code review"*, *"done work is resolved"* and *"nothing gets stuck"*, and Jira itself never checks those promises. A global transition added for a hotfix, a status copied from another project, or a transition screen without the Resolution field quietly breaks them. Dashboards then count finished work as unresolved, or reopened work as resolved, and release reports are wrong.
 
-Railway signal boxes solved this a century ago with interlocking: the frame physically prevents a lever combination that would set conflicting routes. Interlock brings the same idea to Jira. It is a model checker. It reads every workflow on the site and explores every state a work item can reach, meaning each status combined with whether the resolution is set. It then checks properties against all of those states, not a sample of them.
+Railway signal boxes solved this a century ago with interlocking: the frame physically prevents a lever combination that would set conflicting routes. Interlock brings the same idea to Jira. Instead of testing a few example tickets, it works through every situation a work item can ever be in, meaning each status combined with whether the resolution is set, and checks each promise against all of them. That kind of exhaustive check is called model checking.
+
+It is for Jira administrators and the teams who rely on Jira's numbers: service desks reporting SLAs and change volumes, software teams with review rules, anyone whose release report counts resolved work.
 
 ## What it finds
 
@@ -40,7 +42,9 @@ Then **fix at the cause**: for resolution findings, Interlock adds *Set resoluti
 - The interlocking table lists the findings with their routes, evidence lamps, replay and fix.
 - You can write a rule ("work reaches Done only through Code Review") and Interlock proves or refutes it over every route at once, in the browser.
 
-On a site with no software project, **Add the Ship demo project** builds a realistic delivery workflow with 20 tickets moved along real routes. Half of the 12 done tickets end up unresolved, and the rule *Done only through Code Review* is refuted with the exact route.
+On a site with no software project, **Add the Ship demo project** builds a seeded demo: a delivery workflow with the shortcuts teams add over time, and 20 tickets moved along real routes. Half of its 12 done tickets end up unresolved, and the rule *Done only through Code Review* is refuted with the exact route. The demo shows the mechanics; the evidence that this happens in real configurations is the [built-in template report](docs/atlassian-templates.md).
+
+**The daily watch** proves every workflow again once a day and compares each proof with the one before, so a workflow edit that opens a bad route shows up as a new finding with the date it appeared.
 
 **Rovo.** The *Workflow interlock* agent answers questions such as *"Can work in Change Management reach Completed without passing Review?"* with a proof or a counterexample route. The same three tools (`check-workflows`, `get-workflow-findings`, `prove-route`) are published as an MCP server, so a coding agent can prove a workflow before and after changing it. [`skills/interlock/SKILL.md`](skills/interlock/SKILL.md) tells an agent how to use them.
 
@@ -68,6 +72,17 @@ Interlock is for Jira administrators, because workflows are site configuration.
 | `read:jira-user` | read the current user when building the demo project |
 
 Interlock changes a workflow only when an admin clicks **Apply** on a fix that Jira has already validated.
+
+## For judges
+
+Install Interlock from the link on the Devpost page, as a Jira administrator (workflows are site configuration, so the page is shown to admins only). Then:
+
+1. Open **Apps → Interlock**. It reads and proves every workflow on the site; the lever frame on the left lists the ones with findings, worst first. On a site created from Jira's templates you will see the same defects as in the [template report](docs/atlassian-templates.md).
+2. Select a workflow, then a finding. The track diagram lights the bad route and a train runs along it. The lamps show how far the finding is proven: proved, seen in your data, replayed.
+3. Select **Replay on a new work item**. Interlock walks a new work item down the route through Jira and reads back the status and resolution after each step. Delete the item afterwards with the button next to it.
+4. On a resolution finding, select **Check the fix with Jira**, then **Apply**. The site is proved again and the lamp turns green. **Undo** puts the workflow back.
+5. Under **Rules for this workflow**, prove a rule such as *work reaches Done only through Code Review*. On a site without a software project, **Add the Ship demo project** first.
+6. In Rovo, ask the *Workflow interlock* agent *"Can work in Change Management reach Completed without passing Review?"*
 
 ## Build and deploy
 
