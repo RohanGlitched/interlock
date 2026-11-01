@@ -600,9 +600,14 @@ export const handler = resolver.getDefinitions();
 
 // ---------- tools for agents (Rovo actions, exposed over MCP) ----------
 
+// exact name first; otherwise a part of the name that matches exactly one workflow (never a guess)
 const findWorkflow = (site, name) => {
   const q = String(name || '').trim().toLowerCase();
-  return site.workflows.find((w) => w.name.toLowerCase() === q) || site.workflows.find((w) => w.name.toLowerCase().includes(q));
+  if (!q) return null;
+  const exact = site.workflows.find((w) => w.name.toLowerCase() === q);
+  if (exact) return exact;
+  const some = site.workflows.filter((w) => w.name.toLowerCase().includes(q));
+  return some.length === 1 ? some[0] : null;
 };
 
 const brief = (f) => ({
@@ -610,26 +615,41 @@ const brief = (f) => ({
   route: f.route ? [f.route.startName, ...f.route.hops.map((h) => `${h.transition}${h.global ? ' (from any status)' : ''} -> ${h.toName}`)].join(' | ') : undefined,
 });
 
+// The agents see what the page sees: the team's saved rules are proved, and findings an admin recorded
+// as intended are reported apart, not as problems.
+async function agentReport(site) {
+  const report = checkSite(site, (await kvs.get('rules').catch(() => null)) || {});
+  const intended = (await kvs.get('intended').catch(() => null)) || {};
+  for (const r of report.results) {
+    const isIntended = (f) => intended[`${r.workflow.id}|${f.property}|${f.subject || ''}`];
+    r.intended = r.findings.filter(isIntended);
+    r.findings = r.findings.filter((f) => !isIntended(f));
+  }
+  return report;
+}
+
 async function checkWorkflowsInner(payload) {
   const site = await loadSite();
-  const report = checkSite(site);
+  const report = await agentReport(site);
   const project = payload?.projectKey && String(payload.projectKey).toUpperCase();
   const projectId = project && site.projects.find((p) => p.key === project)?.id;
   const results = report.results.filter((r) => !project || r.usage.some((u) => u.project === project) || r.scope?.project?.id === projectId);
   return {
     checked: results.length, msToCheck: report.ms,
-    workflowsWithFindings: results.filter((r) => r.findings.length).map((r) => ({
+    // at most 50 workflows in one answer, so it stays readable for an agent; the count says how many there are
+    workflowsWithFindings: results.filter((r) => r.findings.length).slice(0, 50).map((r) => ({
       workflow: r.workflow.name, usedIn: [...new Set(r.usage.map((u) => u.project))],
-      findings: r.findings.map(brief),
+      findings: r.findings.map(brief), recordedAsIntended: r.intended.length || undefined,
     })),
+    totalWithFindings: results.filter((r) => r.findings.length).length,
   };
 }
 
 async function getWorkflowFindingsInner(payload) {
   const site = await loadSite();
   const w = findWorkflow(site, payload?.workflow);
-  if (!w) return { error: `No workflow matches "${payload?.workflow}".` };
-  const r = checkSite({ ...site, workflows: [w] }).results[0];
+  if (!w) return { error: `No single workflow matches "${payload?.workflow}". Give its full name.` };
+  const r = (await agentReport({ ...site, workflows: [w] })).results[0];
   return { workflow: w.name, statuses: r.statuses, transitions: r.transitions, reachableStates: r.states, propertiesThatHold: r.held, findings: r.findings.map((f) => ({ ...brief(f), why: f.why })) };
 }
 
