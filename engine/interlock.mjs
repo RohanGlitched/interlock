@@ -33,10 +33,32 @@ export function buildModel(workflow, statuses, { screenHasResolution = new Set()
     if (!resolution && screenId && screenHasResolution.has(String(screenId))) resolution = 'set';
     transitions.push({
       id: t.id, name: t.name, type: t.type, from, to: t.toStatusReference, resolution, screenId,
-      conditions: flattenConditions(t.conditions), validators: (t.validators || []).map((v) => ({ key: v.ruleKey, params: v.parameters || {} })),
+      conditions: flattenConditions(t.conditions), conditionTree: treeOf(t.conditions), validators: (t.validators || []).map((v) => ({ key: v.ruleKey, params: v.parameters || {} })),
     });
   }
   return { id: workflow.id, name: workflow.name, statuses: st, transitions, initial, teamManaged };
+}
+
+// Jira's condition groups: { operation: 'ALL' | 'ANY', conditions: [rules], conditionGroups: [groups] }
+function treeOf(c) {
+  if (!c) return null;
+  return {
+    op: c.operation === 'ANY' ? 'ANY' : 'ALL',
+    rules: (c.conditions || []).map((r) => ({ key: r.ruleKey, params: r.parameters || {} })),
+    groups: (c.conditionGroups || []).map(treeOf).filter(Boolean),
+  };
+}
+
+// Does one rule let at least one person through? A restrict-transition rule that names nobody does not;
+// every other rule is assumed to let someone through (Interlock does not claim more than it can see).
+const ruleAllows = (r) => r.key !== 'system:restrict-issue-transition'
+  || ['accountIds', 'roleIds', 'groupIds', 'permissionKeys', 'groupCustomFields', 'allowUserCustomFields'].some((k) => r.params[k]);
+
+function treeAllows(tree) {
+  if (!tree) return true;
+  const parts = [...tree.rules.map(ruleAllows), ...tree.groups.map(treeAllows)];
+  if (!parts.length) return true;
+  return tree.op === 'ANY' ? parts.some(Boolean) : parts.every(Boolean);
 }
 
 function flattenConditions(c) {
@@ -46,15 +68,10 @@ function flattenConditions(c) {
   return out;
 }
 
-// A transition is usable by nobody when a restrict-transition condition names no one at all.
+// A transition is usable by nobody when its conditions, read as ALL/ANY groups, let no one through.
 export function usableBySomeone(t) {
-  for (const c of t.conditions) {
-    if (c.key !== 'system:restrict-issue-transition') continue;
-    const p = c.params;
-    const anyone = ['accountIds', 'roleIds', 'groupIds', 'permissionKeys', 'groupCustomFields', 'allowUserCustomFields'].some((k) => p[k]);
-    if (!anyone) return false;
-  }
-  return true;
+  if (t.conditionTree !== undefined) return treeAllows(t.conditionTree);
+  return t.conditions.every(ruleAllows); // models built before condition trees were kept
 }
 
 const key = (s, r) => `${s}|${r ? 1 : 0}`;
@@ -143,6 +160,7 @@ export function check(model, { mustPass = [] } = {}) {
   for (const t of model.transitions) if (!usableBySomeone(t)) findings.push({ property: 'nobody', transition: t.id, subject: t.name });
   // user rules: every route from creation to `target` passes through `via`
   for (const rule of mustPass) {
+    if (rule.via === model.initial) continue; // every route starts there, so the rule holds
     const skipped = explore(model, { skip: rule.via });
     const hit = [...skipped.entries()].find(([, n]) => n.s === rule.target);
     if (hit) findings.push({ property: 'mustPass', rule, subject: `${name.get(rule.target)} without ${name.get(rule.via)}`, route: routeTo(skipped, hit[0], model) });

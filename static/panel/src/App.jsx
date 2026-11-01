@@ -398,7 +398,7 @@ function Fix({ f, result, onFixed }) {
       const r = await invoke('fix', { workflowId: result.workflow.id, property: f.property, status: f.status, mode });
       if (mode === 'apply' && r.applied) {
         await onFixed(`Fixed and proved again: ${result.workflow.name} now ${f.property === 'doneUnresolved' ? `sets a resolution on every route into ${f.subject}` : `clears the resolution on every route back to ${f.subject}`}.`,
-          { workflowId: result.workflow.id, property: f.property, status: f.status, transitions: r.changed, name: result.workflow.name });
+          { workflowId: result.workflow.id, property: f.property, status: f.status, transitions: r.changed, before: r.before, name: result.workflow.name });
         return;
       }
       setState({ step: 'checked', ...r });

@@ -84,6 +84,7 @@ modules:
   function:
     - key: watch
       handler: index.watch
+      timeoutSeconds: 300
     - key: resolver
       handler: index.handler
     - key: checkWorkflows

@@ -2,6 +2,7 @@ import Resolver from '@forge/resolver';
 import api, { route, assumeTrustedRoute } from '@forge/api';
 import { kvs } from '@forge/kvs';
 import { verify, buildModel } from '../engine/interlock.mjs';
+import { resolutionFor } from '../engine/resolution.mjs';
 
 // Interlock reads the site's workflow configuration as the signed-in admin, checks every workflow,
 // and can replay a finding on a scratch work item to prove it happens for real.
@@ -56,7 +57,7 @@ export async function loadSite({ asApp = false, fresh = false } = {}) {
   const cached = fresh ? null : await kvs.get('cache:screens').catch(() => null);
   const known = cached && Date.now() - cached.at < 10 * 60e3 ? cached.screens : {};
   const screens = { ...known };
-  const screenErrors = [];
+  const screenErrors = [], unreadable = [];
   await Promise.all([
     pool(classic, 10, async (p) => {
       const r = await call(route`/rest/api/3/workflowscheme/project?projectId=${p.id}`).catch(() => null);
@@ -69,7 +70,9 @@ export async function loadSite({ asApp = false, fresh = false } = {}) {
     }),
     pool(screenIds.filter((id) => !(id in known)), 10, async (id) => {
       const tabs = await call(route`/rest/api/3/screens/${id}/tabs`).catch((e) => { screenErrors.push(`${id}: ${e.message}`); return null; });
-      if (!tabs) return;
+      // a screen Interlock cannot read is assumed to ask for the resolution: it may hide a finding, but it
+      // never invents one; the report says how many screens were unreadable
+      if (!tabs) { unreadable.push(id); return; }
       screens[id] = false;
       for (const tab of tabs) {
         const fields = await call(route`/rest/api/3/screens/${id}/tabs/${tab.id}/fields`).catch((e) => { screenErrors.push(`${id}/${tab.id}: ${e.message}`); return []; });
@@ -79,7 +82,7 @@ export async function loadSite({ asApp = false, fresh = false } = {}) {
   ]);
   // the cache keeps the time of its last full read, so every answer in it is at most 10 minutes old
   await kvs.set('cache:screens', { at: Object.keys(known).length ? cached.at : Date.now(), screens }).catch(() => {});
-  const screenHasResolution = Object.keys(screens).filter((id) => screens[id]);
+  const screenHasResolution = [...Object.keys(screens).filter((id) => screens[id]), ...unreadable];
   if (screenErrors.length) console.warn('screens unreadable', screenErrors.slice(0, 3));
   const teamManagedProjects = new Set(projects.filter((p) => p.style === 'next-gen').map((p) => p.id));
   // a team-managed workflow belongs to its one project, so it is used there (no scheme to look up)
@@ -88,7 +91,7 @@ export async function loadSite({ asApp = false, fresh = false } = {}) {
     const pid = w.scope?.type === 'PROJECT' ? w.scope.project?.id : null;
     if (pid && byId[pid] && !usage[w.name]) usage[w.name] = [{ project: byId[pid].key, projectId: pid, issueType: null }];
   }
-  return { workflows, statuses, projects, usage, schemes, screenHasResolution, teamManagedProjects: [...teamManagedProjects] };
+  return { workflows, statuses, projects, usage, schemes, screenHasResolution, unreadableScreens: unreadable.length, teamManagedProjects: [...teamManagedProjects] };
 }
 
 export function checkSite(site, rules = {}) {
@@ -100,7 +103,7 @@ export function checkSite(site, rules = {}) {
     const r = verify(w, statuses, { screenHasResolution: screens, teamManaged, mustPass: rules[w.id] || [] });
     return { ...r, teamManaged, usage: site.usage[w.name] || [], scope: w.scope };
   });
-  return { checkedAt: new Date().toISOString(), ms: Date.now() - t0, results };
+  return { checkedAt: new Date().toISOString(), ms: Date.now() - t0, results, unreadableScreens: site.unreadableScreens || 0 };
 }
 
 const resolver = new Resolver();
@@ -158,7 +161,9 @@ function snapshotOf(report) {
 export async function recordProof(report, by) {
   const snap = snapshotOf(report), prev = await kvs.get('watch:snapshot');
   const at = new Date().toISOString(), changes = [];
-  if (prev) {
+  // a proof that could not read every screen is not compared: it would report changes that are only
+  // differences in what Interlock could see
+  if (prev && !report.unreadableScreens) {
     for (const [id, cur] of Object.entries(snap)) {
       const before = new Set((prev[id]?.findings || []).map((f) => f.key));
       for (const f of cur.findings) if (!before.has(f.key)) changes.push({ kind: prev[id] ? 'new' : 'new workflow', workflow: cur.name, title: f.title, subject: f.subject });
@@ -168,10 +173,14 @@ export async function recordProof(report, by) {
       for (const f of old.findings) if (!now.has(f.key)) changes.push({ kind: snap[id] ? 'fixed' : 'workflow removed', workflow: old.name, title: f.title, subject: f.subject });
     }
   }
-  const history = (await kvs.get('watch:history')) || [];
+  // the snapshot is written first, so a failure later can never leave the watch diffing an old proof
+  if (!report.unreadableScreens) await kvs.set('watch:snapshot', snap);
+  // KVS values are capped at 240 KiB; history keeps the newest entries that fit in about 150 KB
+  let history = (await kvs.get('watch:history')) || [];
   if (changes.length) history.unshift({ at, by, changes: changes.slice(0, 50) });
-  await kvs.set('watch:history', history.slice(0, 60));
-  await kvs.set('watch:snapshot', snap);
+  history = history.slice(0, 60);
+  while (history.length > 1 && JSON.stringify(history).length > 150000) history.pop();
+  await kvs.set('watch:history', history);
   const last = { at, by, workflows: report.results.length, withFindings: report.results.filter((r) => r.findings.length).length };
   await kvs.set('watch:last', last);
   return { last, changes };
@@ -231,10 +240,10 @@ resolver.define('replay', async (req) => {
     const i = await jira(route`/rest/api/3/issue/${created.key}?fields=status,resolution`);
     return { status: i.fields.status.name, category: i.fields.status.statusCategory.key, resolution: i.fields.resolution?.name || null };
   };
-  // mark the item as Interlock's own with an app property (labels can be rewritten by automation rules)
-  await jira(route`/rest/api/3/issue/${created.key}/properties/interlock-replay`, {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ replay: true, at: new Date().toISOString() }),
-  }).catch(() => {});
+  // record the item as Interlock's own in app storage, which no user can edit (labels and issue
+  // properties can be changed by people and automation rules)
+  const mine = (await kvs.get('replays')) || [];
+  await kvs.set('replays', [created.key, ...mine].slice(0, 500));
   steps.push({ step: 'Created', ...(await read()) });
   // a work item that starts somewhere else is on a different workflow: stop rather than prove the wrong thing
   if (startName && steps[0].status !== startName) {
@@ -251,7 +260,7 @@ resolver.define('replay', async (req) => {
     const body = { transition: { id: t.id } };
     const res = t.fields?.resolution;
     if (h.resolution && res?.allowedValues?.length) {
-      const pick = res.allowedValues.find((v) => v.name === 'Done') || res.allowedValues[0];
+      const pick = resolutionFor(res.allowedValues, h.toName, h.transition);
       body.fields = { resolution: { id: pick.id } };
     }
     await jira(route`/rest/api/3/issue/${created.key}/transitions`, {
@@ -259,6 +268,13 @@ resolver.define('replay', async (req) => {
     }).catch((e) => steps.push({ step: h.transition, error: e.message }));
     if (steps.at(-1)?.error) break;
     steps.push({ step: h.transition, ...(await read()) });
+  }
+  // automation rules run a moment after a transition; look again so a rule that fixes the resolution counts
+  if (!steps.at(-1)?.error && steps.length > 1) {
+    await new Promise((r) => setTimeout(r, 6000));
+    const later = await read();
+    const last = steps.at(-1);
+    if (later.status !== last.status || later.resolution !== last.resolution) steps.push({ step: 'Six seconds later (automation)', ...later });
   }
   return { key: created.key, steps };
 });
@@ -268,12 +284,13 @@ resolver.define('replay', async (req) => {
 resolver.define('deleteReplay', async (req) => {
   const key = String(req.payload.key || '');
   if (!/^[A-Z][A-Z0-9_]+-\d+$/.test(key)) throw new Error('Not a work item key');
-  const i = await jira(route`/rest/api/3/issue/${key}?fields=summary,labels&properties=interlock-replay`);
-  const ours = i.properties?.['interlock-replay']?.replay || i.fields.labels?.includes('interlock-replay');
+  const i = await jira(route`/rest/api/3/issue/${key}?fields=summary`);
+  const ours = ((await kvs.get('replays')) || []).includes(key);
   if (!ours || !i.fields.summary?.startsWith('Interlock replay:')) {
     throw new Error(`${key} was not created by an Interlock replay, so Interlock will not delete it`);
   }
   await jira(route`/rest/api/3/issue/${key}`, { method: 'DELETE' });
+  await kvs.set('replays', ((await kvs.get('replays')) || []).filter((k) => k !== key));
   return { deleted: key };
 });
 
@@ -404,7 +421,7 @@ async function screenAsksResolution(screenId) {
 const RES_ACTION = (a) => a.ruleKey === 'system:update-field' && a.parameters?.field === 'resolution';
 
 resolver.define('fix', async (req) => {
-  const { workflowId, property, status, mode, transitions: undoNames } = req.payload;
+  const { workflowId, property, status, mode, before: undoBefore } = req.payload;
   const got = await jira(route`/rest/api/3/workflows`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workflowIds: [workflowId] }) });
   const wf = got.workflows?.[0];
   if (!wf) throw new Error('Workflow not found');
@@ -413,24 +430,24 @@ resolver.define('fix', async (req) => {
   const cat = Object.fromEntries(st.map((s) => [s.id, s.statusCategory]));
   const changed = [];
   let resolutionName = null;
+  const before = {}; // each changed transition's actions before the fix, so Undo can put them back exactly
   if (mode === 'undo') {
-    // take back exactly what a fix added: the resolution step on the transitions it changed
     for (const t of wf.transitions) {
-      if (!undoNames?.includes(t.name) || t.toStatusReference !== status) continue;
-      const keep = (t.actions || []).filter((a) => !RES_ACTION(a));
-      if (keep.length === (t.actions || []).length) continue;
-      t.actions = keep;
+      if (!undoBefore || !(t.id in undoBefore) || t.toStatusReference !== status) continue;
+      t.actions = undoBefore[t.id];
       changed.push(t.name);
     }
   } else if (property === 'doneUnresolved') {
     const res = await jira(route`/rest/api/3/resolution/search`);
-    const done = res.values.find((r) => r.name === 'Done') || res.values[0];
+    const target = st.find((s) => s.id === status)?.name;
+    const done = resolutionFor(res.values, target);
     resolutionName = done.name;
     for (const t of wf.transitions) {
       if (t.type === 'INITIAL' || t.toStatusReference !== status) continue;
       const sets = (t.actions || []).some((a) => RES_ACTION(a) && a.parameters.value);
       if (sets) continue;
       if (await screenAsksResolution(t.transitionScreen?.parameters?.screenId)) continue;
+      before[t.id] = t.actions || [];
       t.actions = [...(t.actions || []), { ruleKey: 'system:update-field', parameters: { field: 'resolution', value: done.id, mode: '' } }];
       changed.push(t.name);
     }
@@ -441,6 +458,7 @@ resolver.define('fix', async (req) => {
       if (!from.some((f) => cat[f] === 'DONE')) continue;
       const clears = (t.actions || []).some((a) => a.ruleKey === 'system:update-field' && a.parameters?.field === 'resolution' && !a.parameters.value);
       if (clears) continue;
+      before[t.id] = t.actions || [];
       t.actions = [...(t.actions || []), { ruleKey: 'system:update-field', parameters: { field: 'resolution', value: '', mode: '' } }];
       changed.push(t.name);
     }
@@ -452,7 +470,7 @@ resolver.define('fix', async (req) => {
   if (validation.errors?.length) return { changed, resolutionName, valid: false, errors: validation.errors.map((e) => e.message || JSON.stringify(e)) };
   if (mode !== 'apply' && mode !== 'undo') return { changed, resolutionName, valid: true };
   await jira(route`/rest/api/3/workflows/update`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(update) });
-  return { changed, resolutionName, valid: true, applied: true };
+  return { changed, resolutionName, valid: true, applied: true, before };
 });
 
 export const handler = resolver.getDefinitions();
