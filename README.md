@@ -24,7 +24,7 @@ Each finding comes with the shortest route that breaks the property, from creati
 A proof says what *can* happen. Interlock then takes each finding as far as it can go:
 
 1. **Proved.** The model checker found the route.
-2. **In your data.** For resolution findings, Interlock counts the work items in the projects using that workflow that are already in the bad state, using Jira's own search. On a new Atlassian demo site, 77 work items were already wrong before anything was changed.
+2. **In your data.** For resolution findings, Interlock counts the work items in the projects using that workflow that are already in the bad state, using Jira's own search. On an Atlassian demo site on Nov 1, 2026, before we added anything, 29 of its 97 workflows had routes that go wrong and 78 work items in its sample projects were already in a wrong state.
 3. **Replayed.** One click creates a new work item and walks it down the route through Jira's transitions API. It then reports what Jira actually did, including any board column or automation rule that sets the resolution on the way, which would make the route safe.
 
 Then **fix at the cause**: for resolution findings, Interlock adds *Set resolution* or *Clear resolution* to the transitions involved. Jira validates the change first, and Interlock saves it only when an admin clicks Apply. The whole site is then proved again.
@@ -51,7 +51,7 @@ On a site with no software project, **Add the Ship demo project** builds a reali
   - whether its conditions let anyone use it.
 - A breadth-first search over (status, resolution set) states finds every reachable state, with parent links, so every finding comes with its shortest route.
 - Team-managed projects keep the resolution in step with done statuses themselves, and the model knows that.
-- Checking all 97 workflows on the demo site, 761 transitions in all, takes about 100 ms. The engine is plain JavaScript with no dependencies, and the page runs it again in the browser whenever you change a rule.
+- Checking all 97 workflows on that demo site, 761 transitions in all, takes about 100 ms once the configuration is loaded (loading it over the REST API takes a few seconds). The engine is plain JavaScript with no dependencies, and the page runs it again in the browser whenever you change a rule.
 
 ## Permissions
 
