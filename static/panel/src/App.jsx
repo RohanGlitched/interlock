@@ -23,7 +23,7 @@ export default function App() {
   const [frozen, setFrozen] = useState(null);
 
   const run = (fresh = false) => {
-    setReport(null); setError(null); setFrozen(null);
+    setReport(null); setError(null); setFrozen(null); setTouched(false); setRankedWithCounts(false);
     invoke('checkSite', { fresh }).then((r) => {
       setReport(r);
       setMeasuring(true);
@@ -72,9 +72,17 @@ export default function App() {
 
   // the lever order is set once, when the proof arrives (most findings first); counts that arrive later
   // add their badges without moving anything under the pointer
+  // until someone picks a workflow, the order follows the evidence: once the live counts arrive, the
+  // workflows with work items already wrong move to the top (once); after a pick it holds still
+  const [touched, setTouched] = useState(false);
+  const counted = results.some((r) => r.observed);
+  const [rankedWithCounts, setRankedWithCounts] = useState(false);
   useEffect(() => {
-    if (results.length && !frozen) setFrozen([...results].sort((a, b) => b.findings.length - a.findings.length || a.workflow.name.localeCompare(b.workflow.name)).map((x) => x.workflow.id));
-  }, [results, frozen]);
+    const live = (r) => Object.values(r.observed || {}).reduce((b, o) => b + o.bad, 0);
+    const order = () => [...results].sort((a, b) => live(b) - live(a) || b.findings.length - a.findings.length || a.workflow.name.localeCompare(b.workflow.name)).map((x) => x.workflow.id);
+    if (results.length && !frozen) setFrozen(order());
+    else if (counted && !rankedWithCounts && !touched) { setFrozen(order()); setRankedWithCounts(true); }
+  }, [results, frozen, counted, touched, rankedWithCounts]);
 
   if (error) return <div className="il-empty"><h1>Interlock could not read this site's workflows</h1><p>{error}</p><p>Interlock needs a Jira administrator to open it, because workflows are site configuration.</p><button className="il-btn" onClick={() => run(true)}>Check again</button></div>;
   if (!report) return <Boot />;
@@ -118,7 +126,7 @@ export default function App() {
           <ul>
             {list.map((r) => (
               <li key={r.workflow.id}>
-                <button className={`il-lever ${r.workflow.id === sel.workflow.id ? 'pulled' : ''}`} onClick={() => { setSelId(r.workflow.id); setFocus(null); if (!frozen) setFrozen(ranked.map((x) => x.workflow.id)); }}>
+                <button className={`il-lever ${r.workflow.id === sel.workflow.id ? 'pulled' : ''}`} onClick={() => { setSelId(r.workflow.id); setFocus(null); setTouched(true); if (!frozen) setFrozen(ranked.map((x) => x.workflow.id)); }}>
                   <span className="handle" aria-hidden="true" />
                   <span className="name" title={r.workflow.name}>{r.workflow.name}</span>
                   <span className="count">{liveOf(r) ? <span className="live" title={`${liveOf(r)} work items already in a wrong state`}>{liveOf(r)}</span> : null}{r.findings.length ? <span title={`${r.findings.length} ${r.findings.length === 1 ? 'finding' : 'findings'}`}><Lamp state="red" />{r.findings.length}</span> : <Lamp state="green" />}</span>
