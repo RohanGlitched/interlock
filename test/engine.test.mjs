@@ -220,6 +220,16 @@ test('approvals: cancelled work moved on to a successful done status still needs
   assert.deepEqual(verify(ww, st).findings.filter((f) => f.property === 'approvalSkipped').map((f) => f.subject), ['Completed']);
 });
 
+test('approvals: "Disapprove" is not the approval; a workflow with no done status cannot hold "never stuck"', () => {
+  const st = new Map([['1', { name: 'Open', category: 'TODO' }], ['2', { name: 'Awaiting approval', category: 'IN_PROGRESS' }], ['3', { name: 'In progress', category: 'IN_PROGRESS' }], ['4', { name: 'Done', category: 'DONE' }]]);
+  const w = wf([tr('1', 'Submit', ['1'], '2'), tr('2', 'Disapprove', ['2'], '3'), tr('3', 'Finish', ['3'], '4', { actions: setRes })], ['1', '2', '3', '4']);
+  const ww = { ...w, statuses: w.statuses.map((s) => (s.statusReference === '2' ? { ...s, properties: { 'approval.groups': 'true' } } : s)) };
+  assert.deepEqual(verify(ww, st).findings.filter((f) => f.property === 'approvalSkipped').map((f) => f.subject), ['Done']);
+  const open = new Map([['1', { name: 'Open', category: 'TODO' }], ['2', { name: 'Doing', category: 'IN_PROGRESS' }]]);
+  const out = verify(wf([tr('1', 'Start', ['1'], '2')], ['1', '2']), open);
+  assert.ok(out.undecided.includes('stranded') && !out.held.includes('stranded'));
+});
+
 // ---------- the history trace ----------
 import { lastStatusChange, waysOf } from '../engine/trace.mjs';
 const h = (created, ...items) => ({ created, items });

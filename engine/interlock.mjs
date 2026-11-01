@@ -85,7 +85,7 @@ export function usableBySomeone(t) {
 }
 
 const key = (s, r) => `${s}|${r ? 1 : 0}`;
-const NEGATIVE = /cancel|declin|reject|withdr|won.?t|duplicate|abandon|obsolete|invalid|refused|denied|fail/i;
+const NEGATIVE = /cancel|declin|reject|withdr|won.?t|duplicate|abandon|obsolete|invalid|refused|denied|fail|disapprov|unapprov|not.?approv/i;
 
 // Breadth-first over (status, resolution set). In team-managed projects Jira keeps resolution in step
 // with the status category itself, so resolution is not modelled there.
@@ -166,7 +166,7 @@ function exploreApproval(model, approvals) {
   }
   const approves = (from, t) => {
     if (from.approvedVia) return String(t.id) === String(from.approvedVia);
-    if (t.type === 'GLOBAL' || NEGATIVE.test(name.get(t.to) || '')) return false;
+    if (t.type === 'GLOBAL' || NEGATIVE.test(t.name || '') || NEGATIVE.test(name.get(t.to) || '')) return false;
     const named = approveIds.get(from.id);
     if (named?.size) return named.has(String(t.id));
     return cat.get(t.to) !== 'TODO' && !before.get(from.id)?.has(t.to);
@@ -287,6 +287,7 @@ export function verify(workflow, statuses, opts = {}) {
   // when none does. A resolution property that depends on the screen is undecided: neither found nor held.
   const unreadable = opts.unreadableScreens || new Set();
   const undecided = [];
+  if (!model.statuses.some((s) => s.category === 'DONE')) undecided.push('stranded');
   if (unreadable.size && workflow.transitions.some((t) => unreadable.has(String(t.transitionScreen?.parameters?.screenId || '')))) {
     const asks = check(buildModel(workflow, statuses, { ...opts, screenHasResolution: new Set([...(opts.screenHasResolution || []), ...unreadable]), unreadableScreens: new Set() }), opts);
     const never = check(buildModel(workflow, statuses, { ...opts, unreadableScreens: new Set() }), opts);

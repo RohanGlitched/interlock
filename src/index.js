@@ -705,7 +705,7 @@ async function getWorkflowFindingsInner(payload) {
   const w = findWorkflow(site, payload?.workflow);
   if (!w) return { error: `No single workflow matches "${payload?.workflow}". Give its full name${candidates(site, payload?.workflow)}.` };
   const r = (await agentReport({ ...site, workflows: [w] })).results[0];
-  return { workflow: w.name, statuses: r.statuses, transitions: r.transitions, reachableStates: r.states, propertiesThatHold: r.held, findings: r.findings.map((f) => ({ ...brief(f), why: f.why })) };
+  return { workflow: w.name, statuses: r.statuses, transitions: r.transitions, reachableStates: r.states, propertiesThatHold: r.held, ...(r.undecided?.length ? { undecided: r.undecided } : {}), ...(r.noInitial ? { noCreateTransition: true } : {}), findings: r.findings.map((f) => ({ ...brief(f), why: f.why })) };
 }
 
 // "Can work reach <target> without passing <through>?" answered for every route, not a sample.

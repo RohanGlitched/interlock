@@ -275,7 +275,12 @@ button, select { font: inherit; color: inherit; }
 
 /* the interlocking table: the panel's cream enamel with its own ink, the same in Jira's light and dark themes */
 .il-table { background: var(--il-enamel); color: var(--il-enamel-ink); border-left: 3px solid var(--il-panel-block);
-  --il-text: #1d2620; --il-subtle: #45524a; --il-subtlest: #56625b; --il-surface: #f1f4ee; --il-border: rgba(29, 38, 32, 0.2); --il-red: #b3261e; }
+  --il-text: #1d2620; --il-subtle: #45524a; --il-subtlest: #56625b; --il-surface: #f1f4ee; --il-border: rgba(29, 38, 32, 0.2); --il-red: #b3261e;
+  /* Jira's dark theme would make these dark; on the cream table they keep their light values */
+  --ds-text: #1d2620; --ds-text-subtle: #45524a; --ds-text-subtlest: #56625b; --ds-link: #0b5a3a;
+  --ds-background-danger: #ffeceb; --ds-text-danger: #ae2e24; --ds-background-success: #dcfff1; --ds-text-success: #216e4e;
+  --ds-background-warning: #fff7d6; --ds-text-warning: #7f5f01; --ds-background-neutral: rgba(9, 30, 66, 0.06); --ds-border: rgba(29, 38, 32, 0.2);
+  --ds-background-danger-bold: #c9372c; --ds-text-inverse: #ffffff; }
 .il-table h2 { color: var(--il-text); }
 .il-finding { background: var(--il-surface); border-radius: 3px; }
 .il-finding.on { box-shadow: inset 4px 0 0 var(--il-red), 0 0 0 1px var(--il-red); border-color: var(--il-red); }

@@ -27,7 +27,7 @@ modules:
       conversationStarters:
         - Which workflows can finish work without a resolution?
         - "In the Ship: Software delivery workflow, can work skip Code Review?"
-        - What is wrong with the Web design process task workflow?
+        - Which workflow has the most work items already in a wrong state?
       actions:
         - check-workflows
         - get-workflow-findings

@@ -18,6 +18,7 @@ export default function App() {
   const [rules, setRules] = useState({});
   const [replays, setReplays] = useState({});
   const [measuring, setMeasuring] = useState(false);
+  const [countFailed, setCountFailed] = useState(false);
   // once someone picks a workflow the list stops reordering, so counts arriving never move a lever away
   // from under the pointer; a new check unfreezes it
   const [frozen, setFrozen] = useState(null);
@@ -28,7 +29,8 @@ export default function App() {
     invoke('checkSite', { fresh }).then((r) => {
       setReport(r);
       setMeasuring(true);
-      invoke('measureSite', {}).then((m) => setReport((cur) => (cur && cur.checkedAt === r.checkedAt ? withCounts(cur, m) : cur))).catch(() => {}).finally(() => setMeasuring(false));
+      setCountFailed(false);
+      invoke('measureSite', {}).then((m) => setReport((cur) => (cur && cur.checkedAt === r.checkedAt ? withCounts(cur, m) : cur))).catch(() => setCountFailed(true)).finally(() => setMeasuring(false));
       const live = rankScore;
       const worst = [...r.results].sort((a, b) => live(b) - live(a) || b.findings.length - a.findings.length)[0];
       setSelId((id) => id || worst?.workflow.id);
@@ -126,13 +128,13 @@ export default function App() {
     .filter((r) => filter === 'all' || !totals.withFindings || r.findings.length);
 
   return (
-    <div className="il-app">
+    <div className="il-app" onPointerDownCapture={() => { if (!touched) setTouched(true); }} onKeyDownCapture={() => { if (!touched) setTouched(true); }}>
       <header className="il-head">
-        <div className="il-brand"><Lamp state={totals.withFindings ? 'red' : 'green'} /><h1>Interlock</h1></div>
+        <div className="il-brand"><Lamp state={totals.withFindings ? 'red' : results.some((r) => r.undecided?.length || r.noInitial) ? 'amber' : 'green'} /><h1>Interlock</h1></div>
         <dl className="il-board">
           <div><dt>workflows proved</dt><dd>{results.length.toLocaleString()}</dd></div>
           <div className={totals.withFindings ? 'bad' : 'good'}><dt>{totals.withFindings === 1 ? 'has routes that go wrong' : 'have routes that go wrong'}</dt><dd>{totals.withFindings.toLocaleString()}</dd></div>
-          <div className={totals.live ? 'bad' : ''}><dt>work items already wrong</dt><dd>{totals.live ? totals.live.toLocaleString() : measuring ? '…' : '0'}</dd></div>
+          <div className={totals.live ? 'bad' : ''}><dt>{countFailed && !totals.live ? 'work items: Jira could not count them' : 'work items already wrong'}</dt><dd>{totals.live ? totals.live.toLocaleString() : measuring ? '…' : countFailed ? '–' : '0'}</dd></div>
         </dl>
         <p className="il-summary">
           {totals.transitions.toLocaleString()} transitions, every reachable state, in {report.ms} ms.
