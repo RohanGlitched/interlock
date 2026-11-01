@@ -168,6 +168,40 @@ test('the reopen fix goes on the step out of done, even when the route reaches t
   assert.deepEqual(reopenSteps(ts, cat, '2', ['1', '2', '3', '4']), []);
 });
 
+test('rules: passing the required status survives loops and done-to-done moves; reworked finished work must pass again', () => {
+  const s4 = new Map([['1', { name: 'To Do', category: 'TODO' }], ['2', { name: 'Review', category: 'IN_PROGRESS' }], ['3', { name: 'QA', category: 'IN_PROGRESS' }], ['4', { name: 'Blocked', category: 'IN_PROGRESS' }], ['5', { name: 'Done', category: 'DONE' }], ['6', { name: 'Closed', category: 'DONE' }], ['7', { name: 'Reopened', category: 'TODO' }]]);
+  const w = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'To QA', ['2'], '3'), tr('3', 'Block', ['3'], '4'), tr('4', 'Unblock', ['4'], '3'), tr('5', 'Finish', ['3'], '5'),
+    tr('6', 'Close', ['5'], '6'), tr('7', 'Un-close', ['6'], '5'), tr('8', 'Reopen', ['5'], '7'), tr('9', 'Close reopened', ['7'], '6')], ['1', '2', '3', '4', '5', '6', '7']);
+  const rule = (target, via) => verify(w, s4, { mustPass: [{ target, via }] }).findings.filter((f) => f.property === 'mustPass');
+  assert.deepEqual(rule('3', '2'), []); // QA only through Review: the Blocked loop is not a violation
+  // Done only through Review: Done -> Closed -> Done is not a violation (on the same workflow without the reopen)
+  const noReopen = wf(w.transitions.filter((t) => t.id !== '8' && t.id !== '9' && t.id !== '0'), ['1', '2', '3', '4', '5', '6', '7']);
+  assert.deepEqual(verify(noReopen, s4, { mustPass: [{ target: '5', via: '2' }] }).findings.filter((f) => f.property === 'mustPass'), []);
+  // with the reopen, reworked work can finish again without review: a violation
+  assert.equal(rule('5', '2').length, 1);
+  // Closed only through Done: reopened work closed again without finishing again is a violation
+  const broken = rule('6', '5');
+  assert.equal(broken.length, 1);
+  assert.deepEqual(broken[0].route.hops.map((h) => h.transition).slice(-2), ['Reopen', 'Close reopened']);
+});
+
+test('unreadable screens: a resolution property that depends on the screen is undecided, never held', () => {
+  const screen = (id) => ({ transitionScreen: { parameters: { screenId: id } } });
+  // Finish has an unreadable screen into Done; Reopen goes back with nothing on it
+  const w = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Finish', ['2'], '4', screen('88')), tr('3', 'Reopen', ['4'], '2')], ['1', '2', '4']);
+  const out = verify(w, statuses, { unreadableScreens: new Set(['88']) });
+  assert.ok(!out.findings.some((f) => f.property === 'doneUnresolved' || f.property === 'openResolved'));
+  assert.deepEqual(out.undecided.sort(), ['doneUnresolved', 'openResolved']);
+  assert.ok(!out.held.includes('doneUnresolved') && !out.held.includes('openResolved'));
+});
+
+test('a workflow with no create transition holds nothing', () => {
+  const w = { id: 'w', name: 'No start', statuses: [{ statusReference: '1' }, { statusReference: '4' }], transitions: [tr('2', 'Finish', ['1'], '4')] };
+  const out = verify(w, statuses);
+  assert.deepEqual(out.held, []);
+  assert.equal(out.noInitial, true);
+});
+
 // ---------- the history trace ----------
 import { lastStatusChange, waysOf } from '../engine/trace.mjs';
 const h = (created, ...items) => ({ created, items });

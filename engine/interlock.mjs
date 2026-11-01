@@ -133,10 +133,10 @@ function exploreRule(model, target, via) {
       if (model.teamManaged) r = cat.get(t.to) === 'DONE';
       else if (t.resolution === 'set') r = true;
       else if (t.resolution === 'clear') r = false;
-      // passing the required status counts until work leaves the target, or (for a done target) until finished
-      // work is reopened from another done status and has to go round again
-      const reopened = cat.get(target) === 'DONE' && cur.s !== via && cat.get(cur.s) === 'DONE' && cat.get(t.to) !== 'DONE';
-      const p = t.to === via ? true : (cur.s === target && t.to !== target) || reopened ? false : cur.p;
+      // passing the required status counts from then on, through loops and moves between done statuses; for a
+      // done target, finished work that is reopened (done to open) has to pass it again before it finishes again
+      const reopened = cat.get(target) === 'DONE' && cat.get(cur.s) === 'DONE' && cat.get(t.to) !== 'DONE';
+      const p = t.to === via ? true : reopened ? false : cur.p;
       const k = k3(t.to, r, p);
       if (seen.has(k)) continue;
       seen.set(k, { s: t.to, r, p, prev: k3(cur.s, cur.r, cur.p), via: t });
@@ -169,7 +169,7 @@ function exploreApproval(model, approvals) {
       // one, a directed transition to a positive outcome; a "from any status" transition never approves);
       // work that leaves a done status for an open one needs approving again
       const reopened = cat.get(cur.s) === 'DONE' && cat.get(t.to) !== 'DONE';
-      const a = (cur.a && !reopened) || (from && t.type !== 'GLOBAL' ? (from.approvedVia ? String(t.id) === String(from.approvedVia) : !NEGATIVE.test(name.get(t.to) || '')) : false);
+      const a = (cur.a && !reopened) || (from ? (from.approvedVia ? String(t.id) === String(from.approvedVia) : t.type !== 'GLOBAL' && !NEGATIVE.test(name.get(t.to) || '')) : false);
       const k = k3(t.to, r, a);
       if (seen.has(k)) continue;
       seen.set(k, { s: t.to, r, a, prev: k3(cur.s, cur.r, cur.a), via: t });
@@ -260,19 +260,24 @@ export function verify(workflow, statuses, opts = {}) {
   const model = buildModel(workflow, statuses, opts);
   const states = explore(model).size;
   let findings = check(model, opts);
-  // a transition screen Interlock could not read may or may not ask for a resolution: a resolution finding is
-  // reported only if it also holds the other way, so an unreadable screen never invents one
+  // a transition screen Interlock could not read may or may not ask for a resolution. "Done but unresolved" is
+  // reported only if it holds even when every such screen asks; "reopened but still resolved" only if it holds
+  // when none does. A resolution property that depends on the screen is undecided: neither found nor held.
   const unreadable = opts.unreadableScreens || new Set();
+  const undecided = [];
   if (unreadable.size && workflow.transitions.some((t) => unreadable.has(String(t.transitionScreen?.parameters?.screenId || '')))) {
-    // the default model assumes such a screen asks for a resolution into a done status; this one assumes it never does
+    const asks = check(buildModel(workflow, statuses, { ...opts, screenHasResolution: new Set([...(opts.screenHasResolution || []), ...unreadable]), unreadableScreens: new Set() }), opts);
     const never = check(buildModel(workflow, statuses, { ...opts, unreadableScreens: new Set() }), opts);
-    const keep = new Set(never.map((f) => `${f.property}|${f.status}`));
-    findings = findings.filter((f) => (f.property !== 'doneUnresolved' && f.property !== 'openResolved') || keep.has(`${f.property}|${f.status}`));
+    const kept = [...asks.filter((f) => f.property === 'doneUnresolved'), ...never.filter((f) => f.property === 'openResolved')];
+    for (const p of ['doneUnresolved', 'openResolved']) {
+      if (!kept.some((f) => f.property === p) && [...findings, ...asks, ...never].some((f) => f.property === p)) undecided.push(p);
+    }
+    findings = [...findings.filter((f) => f.property !== 'doneUnresolved' && f.property !== 'openResolved'), ...kept].map((f, i) => ({ ...f, id: `f${i + 1}` }));
   }
   // a property only "holds" where it applies: approval coverage needs an approval step to cover
   const hasApproval = model.statuses.some((s) => s.approval);
-  const held = Object.keys(PROPERTIES).filter((p) => p !== 'mustPass' && (p !== 'approvalSkipped' || hasApproval) && !findings.some((f) => f.property === p));
-  return { workflow: { id: model.id, name: model.name }, statuses: model.statuses.length, transitions: model.transitions.length, states, findings, held };
+  const held = !model.initial ? [] : Object.keys(PROPERTIES).filter((p) => p !== 'mustPass' && (p !== 'approvalSkipped' || hasApproval) && !findings.some((f) => f.property === p) && !undecided.includes(p));
+  return { workflow: { id: model.id, name: model.name }, statuses: model.statuses.length, transitions: model.transitions.length, states, findings, held, undecided, ...(model.initial ? {} : { noInitial: true }) };
 }
 
 // The transitions to fix for a "reopened but still resolved" finding on status `target`: on every route that

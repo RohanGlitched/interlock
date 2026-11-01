@@ -270,8 +270,12 @@ resolver.define('traceItems', async (req) => {
 resolver.define('saveRules', async (req) => {
   await requireAdmin();
   const all = (await kvs.get('rules')) || {};
-  const { workflowId, rules } = req.payload;
-  if (rules?.length) all[workflowId] = rules.slice(0, 20); else delete all[workflowId];
+  const { workflowId, rules } = req.payload || {};
+  if (typeof workflowId !== 'string' || !workflowId || workflowId.length > 100) throw new Error('Unknown workflow.');
+  if (rules != null && !Array.isArray(rules)) throw new Error('Rules must be a list.');
+  const clean = (rules || []).filter((r) => /^\d+$/.test(String(r?.target)) && /^\d+$/.test(String(r?.via)) && String(r.target) !== String(r.via))
+    .slice(0, 20).map((r) => ({ target: String(r.target), via: String(r.via) }));
+  if (clean.length) all[workflowId] = clean; else delete all[workflowId];
   await kvs.set('rules', all);
   return { rules: all };
 });
@@ -569,6 +573,7 @@ resolver.define('fix', async (req) => {
   const cat = Object.fromEntries(st.map((s) => [s.id, s.statusCategory]));
   const changed = [];
   let resolutionName = null;
+  const caveats = [];
   const before = {}; // each changed transition's actions before the fix, so Undo can put them back exactly
   if (mode === 'undo') {
     if (!record) throw new Error('Interlock has no record of this fix, so it cannot take it back.');
@@ -587,7 +592,10 @@ resolver.define('fix', async (req) => {
       if (t.type === 'INITIAL' || t.toStatusReference !== status) continue;
       const sets = (t.actions || []).some((a) => RES_ACTION(a) && a.parameters.value);
       if (sets) continue;
+      const from = t.type === 'GLOBAL' ? all.filter((s) => s !== status) : (t.links || []).map((l) => l.fromStatusReference);
+      if (from.length && from.every((f) => cat[f] === 'DONE')) continue;
       if (await screenAsksResolution(t.transitionScreen?.parameters?.screenId)) continue;
+      if (from.some((f) => cat[f] === 'DONE')) caveats.push(`"${t.name}" also runs from a done status, where it would replace an existing resolution with ${done.name}`);
       before[t.id] = t.actions || [];
       t.actions = [...(t.actions || []), { ruleKey: 'system:update-field', parameters: { field: 'resolution', value: done.id, mode: '' } }];
       changed.push(t.name);
@@ -602,6 +610,11 @@ resolver.define('fix', async (req) => {
       changed.push(t.name);
     }
   } else throw new Error('Interlock can repair resolution findings automatically; other findings need a person to redesign the workflow.');
+  if (!changed.length && mode === 'undo') {
+    delete fixes[fixKey(workflowId, property, status)];
+    await kvs.set('fixes', fixes);
+    return { changed, applied: true, note: 'Those transitions are no longer in the workflow, so there is nothing to put back.' };
+  }
   if (!changed.length) return { changed, note: property === 'openResolved'
     ? 'Nothing to change: every step that reopens finished work on the way here already clears the resolution.'
     : 'Nothing to change: every transition into this status already sets the resolution or asks the person for one.' };
@@ -609,8 +622,8 @@ resolver.define('fix', async (req) => {
   const statuses = st.map((s) => ({ id: s.id, name: s.name, description: s.description || '', statusCategory: s.statusCategory, statusReference: s.id }));
   const update = { statuses, workflows: [{ id: wf.id, version: wf.version, name: wf.name, description: wf.description, statuses: wf.statuses, transitions: wf.transitions, startPointLayout: wf.startPointLayout }] };
   const validation = await jira(route`/rest/api/3/workflows/update/validation`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ payload: update }) });
-  if (validation.errors?.length) return { changed, resolutionName, valid: false, errors: validation.errors.map((e) => e.message || JSON.stringify(e)) };
-  if (mode !== 'apply' && mode !== 'undo') return { changed, resolutionName, valid: true };
+  if (validation.errors?.length) return { changed, resolutionName, caveats, valid: false, errors: validation.errors.map((e) => e.message || JSON.stringify(e)) };
+  if (mode !== 'apply' && mode !== 'undo') return { changed, resolutionName, caveats, valid: true };
   await jira(route`/rest/api/3/workflows/update`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(update) });
   const k = fixKey(workflowId, property, status);
   if (mode === 'undo') delete fixes[k];

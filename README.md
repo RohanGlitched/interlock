@@ -85,20 +85,23 @@ Install Interlock from the link on the Devpost page, as a Jira administrator (wo
 1. Open **Apps → Interlock**. It reads and proves every workflow on the site; the lever frame on the left lists the ones with findings, worst first. On a site whose projects were made from older templates you may see findings like those in the [template report](docs/atlassian-templates.md); a brand-new site is likely to be clean, so use the Ship demo to see every feature.
 2. Select a workflow, then a finding. The track diagram lights the bad route and a train runs along it. The lamps show how far the finding is proven: proved, seen in your data, replayed.
 3. Select **Replay on a new work item**. Interlock walks a new work item down the route through Jira and reads back the status and resolution after each step. Delete the item afterwards with the button next to it.
-4. On a resolution finding, select **Check the fix with Jira**, then **Apply**. The site is proved again and the lamp turns green. **Undo** puts the workflow back.
+4. On a resolution finding in the Ship demo workflow (not one your teams use), select **Check the fix with Jira**, then **Apply**. The site is proved again and the lamp turns green. **Undo** puts the workflow back.
 5. Under **Rules for this workflow**, prove a rule such as *work reaches Done only through Code Review*. If the Ship workflow is not on the site yet, **Add the Ship demo project** first.
 6. In Rovo, ask the *Workflow interlock* agent *"Can work in Ship reach Done without passing Code Review?"*
 
 ## Build and deploy
 
 ```bash
+npm install -g @forge/cli     # once; Node 22 or later
+forge login
+forge register                # gives your copy its own app id
 npm install
 cd static/panel && npm install && npm run build && cd ../..
 forge deploy
 forge install
 ```
 
-`npm run dev` in `static/panel` runs the page in a plain browser against a saved copy of a site's workflows. That copy has no transition screens, so it shows more findings (81 of 97) than the live site (29), where screens that ask for a resolution clear many of them.
+`npm run dev` in `static/panel` runs the page in a plain browser against `static/panel/dev/site.json`, a saved copy of a site's workflow search response (not in this repository: save your own). Such a copy has no transition screens, so it shows more findings (81 of 97) than the live site (29), where screens that ask for a resolution clear many of them.
 
 ## Layout
 

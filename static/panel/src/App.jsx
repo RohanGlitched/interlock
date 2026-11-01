@@ -70,7 +70,10 @@ export default function App() {
       const wfRules = rules[r.workflow.id];
       const hasModel = !!report.models[r.workflow.id];
       const model = { ...report.models[r.workflow.id], teamManaged: r.teamManaged };
-      const all = hasModel && (wfRules?.length || report.rules?.[r.workflow.id]?.length) ? check(model, { mustPass: wfRules || [] }) : r.findings;
+      const ruled = (f) => f.property === 'mustPass' || f.property === 'ruleStale';
+      const all = hasModel && (wfRules?.length || report.rules?.[r.workflow.id]?.length)
+        ? [...r.findings.filter((f) => !ruled(f)), ...check(model, { mustPass: wfRules || [] }).filter(ruled).map((f, i) => ({ ...f, id: `rule${i + 1}` }))]
+        : r.findings;
       const isIntended = (f) => intended[`${r.workflow.id}|${f.property}|${f.subject || ''}`];
       return { ...r, findings: all.filter((f) => !isIntended(f)), intended: all.filter(isIntended).map((f) => ({ ...f, record: isIntended(f) })) };
     });
@@ -275,7 +278,7 @@ function Diagram({ model, result, focus }) {
     return fit(v) > fit(h) * 1.15 ? v : h;
   }, [model, frame]);
   // the scale the diagram has when it fits the frame; zoom multiplies it
-  const fitScale = frame ? Math.min(1.7, frame.w / width, Math.max(0.2, (frame.h - 60) / height)) : 0.6;
+  const fitScale = frame ? Math.max(0.8, Math.min(1.7, frame.w / width, (frame.h - 60) / height)) : 0.8;
   const order = useMemo(() => { // the order in which the explorer first reaches each status
     const seen = explore(model), first = new Map(); let i = 0;
     for (const n of seen.values()) if (!first.has(n.s)) first.set(n.s, i++);
@@ -428,7 +431,9 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
     <aside className="il-table" aria-label="Interlocking table" ref={(el) => { if (el && el.dataset.wf !== result.workflow.id) { el.scrollTop = 0; el.dataset.wf = result.workflow.id; } }}>
       <h2>{result.workflow.name}</h2>
       <p className="il-meta">{plural(result.statuses, 'status', 'statuses')}, {plural(result.transitions, 'transition', 'transitions')}, {plural(result.states, 'reachable state', 'reachable states')}{usage ? `, used in ${[...new Set(result.usage.map((u) => u.project))].join(', ')}` : ''}.</p>
-      {!result.findings.length && <p className="il-held"><Lamp state="green" />Every property holds for every reachable state.</p>}
+      {!result.findings.length && !result.undecided?.length && !result.noInitial && <p className="il-held"><Lamp state="green" />Every property holds for every reachable state.</p>}
+      {result.noInitial && <p className="il-note">This workflow has no create transition, so there is no route to prove.</p>}
+      {result.undecided?.length > 0 && <p className="il-note"><Lamp state="amber" /> Could not decide {result.undecided.map((p) => PROPERTIES[p]?.title.toLowerCase()).join(' or ')}: it depends on a transition screen Interlock cannot read. Check that screen's Resolution field by hand.</p>}
       <ol className="il-findings">
         {groupFindings(result.findings).map(({ property, list }) => {
           const active = list.find((f) => f.id === focus?.id);
@@ -635,6 +640,8 @@ function Fix({ f, result, onFixed }) {
       {state.step === 'checked' && (state.valid ? (
         <>
           <p>Interlock will add <b>{f.property === 'doneUnresolved' ? `Set resolution to ${state.resolutionName}` : 'Clear resolution'}</b> to {state.changed.length === 1 ? 'the transition' : 'the transitions'} <b>{state.changed.join(', ')}</b> in {result.workflow.name}. Jira validated it: no errors.</p>
+          {(() => { const projects = [...new Set((result.usage || []).map((u) => u.project).filter(Boolean))]; return projects.length > 1 ? <p>The workflow is shared: the change applies in <b>{projects.join(', ')}</b>.</p> : null; })()}
+          {state.caveats?.length > 0 && <p className="il-err">{state.caveats.join('. ')}.</p>}
           <button className="il-btn primary" onClick={() => ask('apply')}>Apply the fix to the workflow</button>
         </>
       ) : state.note ? <p className="il-note">{state.note}</p> : <p className="il-err">Jira rejected the change: {(state.errors || []).join('; ')}</p>)}
@@ -656,6 +663,8 @@ function groupFindings(findings) {
 function verdictOf(f, rp) {
   const last = rp.steps[rp.steps.length - 1];
   if (last.error) return { confirmed: false, text: ` Jira refused "${last.step}": ${last.error}` };
+  const end = f.route?.hops?.[f.route.hops.length - 1]?.toName;
+  if (end && last.status !== end) return { confirmed: false, text: ` ${rp.key} ended in ${last.status}, not ${end}: Jira took another way, so this replay proves nothing either way.` };
   if (f.property === 'doneUnresolved') {
     const ok = last.category === 'done' && !last.resolution;
     return { confirmed: ok, text: ok ? ` ${rp.key} is in ${last.status} with no resolution.` : ` Jira set the resolution on the way (a board column or automation does it), so this route is safe.` };

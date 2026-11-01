@@ -52,7 +52,7 @@ This is the pattern Interlock proves from configuration: a transition into a don
 - **Sourcetree (1,065):** every item was closed by one person on one day (September 19, 2019) through Resolved → Closed, after the project moved to another workflow. It is a single bulk close through a transition that does not set a resolution: the same defect, but one event.
 - **Lucene (380, open but still resolved):** 379 of the last steps have no author; 367 happened in 2024, after Lucene moved to GitHub Issues in 2022. These are system changes, not people using the workflow.
 
-The totals were counted on Nov 1, 2026 and the histories read on Nov 2, 2026 with `prover/tools/public-trace.mjs` (below) and change as the sites change.
+The totals were counted on Nov 1, 2026 and the histories read on Nov 2, 2026 with `tools/public-trace.mjs` (below) and change as the sites change.
 
 ## Limits
 
@@ -70,7 +70,7 @@ curl -s -G "https://issues.apache.org/jira/rest/api/2/search" \
 Change the host and the query for the other rows, and add `AND project = HUDI` to narrow to one project. To read how the items got there, with who made each step:
 
 ```bash
-node prover/tools/public-trace.mjs issues.apache.org/jira "statusCategory = Done AND resolution is EMPTY" 1900
+node tools/public-trace.mjs issues.apache.org/jira "statusCategory = Done AND resolution is EMPTY" 1900
 ```
 
 It only reads public search results, 50 items at a time.

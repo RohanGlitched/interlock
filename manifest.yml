@@ -9,7 +9,7 @@ modules:
       # workflows are site configuration, so the page is shown to Jira admins only
       displayConditions:
         isAdmin: true
-  # The same checker, as tools for agents: Rovo, and any MCP client (Claude Code, Cursor, Codex) through
+  # The same checker, as tools for agents: Rovo, and any MCP client through
   # the Atlassian MCP server once an admin enables Interlock for external clients.
   rovo:mcp:
     - key: interlock-mcp
