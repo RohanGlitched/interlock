@@ -167,7 +167,10 @@ function Diagram({ model, result, focus }) {
   const globals = model.transitions.filter((t) => t.type === 'GLOBAL');
   return (
     <div className="il-diagram-wrap">
-      <svg className="il-diagram" viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img" aria-label={`Track diagram of ${result.workflow.name}`}>
+      <svg className="il-diagram" viewBox={`0 0 ${width} ${height}`} style={{ maxWidth: width, minWidth: Math.min(width, 640) }} role="img" aria-label={`Track diagram of ${result.workflow.name}`}>
+        <defs>
+          <filter id="il-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.4" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+        </defs>
         <line className="il-rail" x1="16" x2={width - 16} y1="34" y2="34" />
         <text className="il-rail-label" x="18" y="24">From any status</text>
         {globals.map((t, k) => {
@@ -387,6 +390,14 @@ function Rules({ model, rules, setRules }) {
     <section className="il-rules">
       <h3>Rules for this workflow</h3>
       <p className="il-note">Interlock checks a rule against every route, not a sample of them.</p>
+      {!rules.length && (() => {
+        const open = model.statuses.filter((x) => x.category !== 'DONE' && x.id !== model.initial);
+        const review = open.find((x) => /code review/i.test(x.name)) || open.find((x) => /review/i.test(x.name)) || open.find((x) => /qa|test/i.test(x.name));
+        const done = model.statuses.find((x) => x.category === 'DONE');
+        return review && done && (
+          <p className="il-suggest">Try a rule teams rely on: <button className="il-link" onClick={() => setRules([{ target: done.id, via: review.id }])}>work reaches {done.name} only through {review.name}</button></p>
+        );
+      })()}
       {rules.map((r, i) => (
         <p key={i} className="il-rule">Work reaches <b>{name(model, r.target)}</b> only through <b>{name(model, r.via)}</b> <button className="il-link" onClick={() => setRules(rules.filter((_, j) => j !== i))}>Remove</button></p>
       ))}
