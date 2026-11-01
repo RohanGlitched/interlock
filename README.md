@@ -73,7 +73,8 @@ Interlock is for Jira administrators, because workflows are site configuration.
 | `manage:jira-project` | read transition screens (to see which ones set the resolution) and workflow schemes; create the demo project |
 | `read:jira-work` | count work items already in a bad state; read transitions during a replay |
 | `write:jira-work` | create and move the replay work item and the demo work items |
-| `read:jira-user` | read the current user when building the demo project |
+| `read:jira-user` | read the current user when building the demo project, and check that the caller is a Jira administrator |
+| `storage:app` | keep the daily watch's last proof, the team's rules, findings recorded as intended, applied fixes (for Undo) and the list of replay work items |
 
 Interlock changes a workflow only when an admin clicks **Apply** on a fix that Jira has already validated.
 
@@ -97,7 +98,7 @@ forge deploy
 forge install
 ```
 
-`npm run dev` in `static/panel` runs the page in a plain browser against a saved copy of a site's workflows.
+`npm run dev` in `static/panel` runs the page in a plain browser against a saved copy of a site's workflows. That copy has no transition screens, so it shows more findings (81 of 97) than the live site (29), where screens that ask for a resolution clear many of them.
 
 ## Layout
 

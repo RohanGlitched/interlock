@@ -4,7 +4,7 @@ We ran Interlock on an Atlassian demo site on Nov 1, 2026, before we added anyth
 
 Interlock checked 97 workflows and 761 transitions. **29 workflows have routes that leave the resolution wrong**, and **78 work items in the sample projects were already in that wrong state.**
 
-**13 of the 29 are copies of Jira Service Management's template workflows**, named as Jira names them ("Change Management workflow for Jira Service Management"). The Change Management copy appears in six projects with the same five findings. The other 16 are business-template and sample workflows that came with the demo site.
+**13 of the 29 are copies of Jira Service Management's template workflows**, named as Jira names them ("Change Management workflow for Jira Service Management"). The Change Management workflow has six copies (five in use: ENGS, INV, ITO, ITS, SECOPS) with the same five findings. The other 16 are business-template and sample workflows that came with the demo site.
 
 ### Is it the template itself? We checked: today's template is clean
 
@@ -42,7 +42,7 @@ These came with the demo site's sample projects (business templates and sample c
 | Onboarding, Offboarding (HR) | HR | Done but unresolved, Reopened but still resolved | 2 and 1 statuses |
 | Procurement Workflow, Procurement Workflow v2 | PROC | Done but unresolved | Purchased, Rejected |
 | Content Management Workflow, v2 | MC | Done but unresolved | 1 done status |
-| Document Approval Workflow, v2 | none (LGL's copies are not in use) | Done but unresolved | 1 done status |
+| Document Approval Workflow, v2, and a copy of v2 | none (LGL's three copies are not in use) | Done but unresolved | 1 done status |
 | Web design process task and sub-task workflows | DESIGN | Done but unresolved | Launch |
 | Bug Intake, NIST Workflow, Simple Inventory Example | ENGS, SECOPS, FAC | Done but unresolved | 1 done status each |
 
@@ -64,7 +64,7 @@ Whether a shortcut like "Mark as done" is acceptable is a policy decision (stand
 A proof says a route exists. Interlock then replays the route through Jira's own transitions API on a new work item, filling in each transition screen the way a person would, and reads back the status and resolution after every step.
 
 - **Change Management (ITS):** a change request is created in Review, declined (the Decline screen asks for a resolution and the replay chose Declined, as a person would), then sent "Back to review". **ITS-6267 ended up open in Review and still resolved as Declined**, and it was unchanged when Interlock looked again a few seconds later (an automation rule on a slower schedule could still change it; none did while we watched). Any change request that is declined and then reconsidered counts as resolved: it drops out of every filter, report and SLA that looks for unresolved changes.
-- **Procurement (PROC):** "Demo Fast Track" takes a request to Purchased with no resolution. PROC-126 confirmed it. On the demo site, **72 of the 109 done procurement requests were unresolved** (73 of 110 after our replay, PROC-126, reached Purchased the same way), so every report counted them as still open.
+- **Procurement (PROC):** "Demo Fast Track" takes a request to Purchased with no resolution. PROC-126 confirmed it. On the demo site, **72 of the 109 done procurement requests were unresolved** (73 of 110 after our replay, PROC-126, reached Purchased the same way), so every report counted them as still open. We then applied Interlock's fix to the PROC v2 workflow (Purchased now sets a resolution on every route into it), so no new request can get there that way. The 72 already there are left to clean up; Interlock now leaves its own replay items out of the count, and its trace shows 45 of 50 sampled requests came Accepted → Purchased before the fix.
 - **Web design (DESIGN):** 1 of 1 launched task was unresolved.
 
 ## The fix
