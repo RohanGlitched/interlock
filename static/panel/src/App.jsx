@@ -87,6 +87,7 @@ export default function App() {
           <button className="il-link" onClick={() => setNotice(null)}>Dismiss</button>
         </div>
       )}
+      <Watch stamp={report.checkedAt} />
       <div className="il-body">
         <nav className="il-levers" aria-label="Workflows">
           <div className="il-filter" role="tablist">
@@ -466,3 +467,44 @@ function Rules({ model, rules, setRules }) {
   );
 }
 const name = (m, id) => m.statuses.find((s) => s.id === id)?.name || id;
+
+// What the watch has seen: when the last proof ran, and the findings that appeared or cleared since the one
+// before. A new finding means someone's workflow edit opened a bad route; a cleared one was fixed.
+function Watch({ stamp }) {
+  const [w, setW] = useState(null);
+  useEffect(() => { invoke('watchStatus', {}).then(setW).catch(() => setW(null)); }, [stamp]);
+  if (!w?.last) return null;
+  const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+  const latest = w.history?.[0];
+  const fresh = latest && latest.at === w.last.at;
+  const count = (h, kind) => h.changes.filter((c) => c.kind.startsWith(kind)).length;
+  return (
+    <details className="il-watch">
+      <summary>
+        <Lamp state={fresh && count(latest, 'new') ? 'red' : 'green'} />
+        <span>
+          Watched daily. Last proof {when(w.last.at)}{w.last.by === 'daily watch' ? ' by the daily watch' : ''}:{' '}
+          {fresh ? <>{count(latest, 'new') ? <b>{plural(count(latest, 'new'), 'new finding', 'new findings')}</b> : null}{count(latest, 'new') && count(latest, 'fixed') ? ', ' : ''}{count(latest, 'fixed') ? plural(count(latest, 'fixed'), 'finding fixed', 'findings fixed') : ''} since the proof before.</> : 'nothing changed since the proof before.'}
+        </span>
+        {w.history?.length > 0 && <span className="il-watch-more">History</span>}
+      </summary>
+      {w.history?.length > 0 && (
+        <ol>
+          {w.history.map((h) => (
+            <li key={h.at}>
+              <time>{when(h.at)}</time>
+              <ul>
+                {h.changes.map((c, k) => (
+                  <li key={k} className={c.kind.startsWith('new') ? 'new' : 'fixed'}>
+                    <Lamp state={c.kind.startsWith('new') ? 'red' : 'green'} />
+                    <span><b>{c.kind.startsWith('new') ? 'New' : 'Fixed'}:</b> {c.title}{c.subject ? `, ${c.subject}` : ''} in {c.workflow}</span>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ol>
+      )}
+    </details>
+  );
+}

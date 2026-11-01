@@ -22,6 +22,13 @@ async function devInvoke(fn, payload = {}) {
     for (const h of payload.hops) { await new Promise((r) => setTimeout(r, 500)); steps.push({ step: h.transition, status: h.toName, category: 'done', resolution: null }); }
     return { key: 'DESIGN-41', steps };
   }
+  if (fn === 'watchStatus') {
+    const at = new Date(Date.now() - 3 * 3600e3).toISOString();
+    return { last: { at, by: 'daily watch', workflows: 97, withFindings: 29 }, history: [
+      { at, by: 'daily watch', changes: [{ kind: 'new', workflow: 'ITS: Change Management workflow for Jira Service Management', title: 'Done but unresolved', subject: 'Completed' }] },
+      { at: new Date(Date.now() - 27 * 3600e3).toISOString(), by: 'admin', changes: [{ kind: 'fixed', workflow: 'PROC: Procurement Workflow', title: 'Done but unresolved', subject: 'Purchased' }] },
+    ] };
+  }
   throw new Error('no dev handler for ' + fn);
 }
 

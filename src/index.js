@@ -1,5 +1,6 @@
 import Resolver from '@forge/resolver';
 import api, { route, assumeTrustedRoute } from '@forge/api';
+import { kvs } from '@forge/kvs';
 import { verify, buildModel } from '../engine/interlock.mjs';
 
 // Interlock reads the site's workflow configuration as the signed-in admin, checks every workflow,
@@ -14,6 +15,13 @@ async function jira(path, init) {
   return res.status === 204 ? null : res.json();
 }
 
+// The same, as the app itself: used by the daily watch, which runs with no user signed in.
+async function jiraApp(path, init) {
+  const res = await api.asApp().requestJira(path, init);
+  if (!res.ok) throw new Error(`Jira answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return res.status === 204 ? null : res.json();
+}
+
 async function pool(items, n, fn) { // run fn over items, n at a time
   const out = new Array(items.length); let i = 0;
   await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => { while (i < items.length) { const k = i++; out[k] = await fn(items[k], k); } }));
@@ -21,10 +29,11 @@ async function pool(items, n, fn) { // run fn over items, n at a time
 }
 
 // Everything the checker needs, in one pass over the site's configuration.
-export async function loadSite() {
+export async function loadSite({ asApp = false } = {}) {
+  const call = asApp ? jiraApp : jira;
   const workflows = [];
   for (let startAt = 0; ;) {
-    const page = await jira(route`/rest/api/3/workflows/search?startAt=${startAt}&maxResults=50&expand=values.transitions`);
+    const page = await call(route`/rest/api/3/workflows/search?startAt=${startAt}&maxResults=50&expand=values.transitions`);
     workflows.push(...page.values);
     if (page.isLast || !page.values.length) break;
     startAt += page.values.length;
@@ -32,14 +41,14 @@ export async function loadSite() {
   // a large site has thousands of statuses; the search pages at 200
   const statuses = {};
   for (let startAt = 0; ;) {
-    const page = await jira(route`/rest/api/3/statuses/search?startAt=${startAt}&maxResults=200`);
+    const page = await call(route`/rest/api/3/statuses/search?startAt=${startAt}&maxResults=200`);
     for (const s of page.values) statuses[s.id] = { name: s.name, category: s.statusCategory };
     if (page.isLast || !page.values.length) break;
     startAt += page.values.length;
   }
   const projects = [];
   for (let startAt = 0; ;) {
-    const page = await jira(route`/rest/api/3/project/search?startAt=${startAt}&maxResults=50`);
+    const page = await call(route`/rest/api/3/project/search?startAt=${startAt}&maxResults=50`);
     projects.push(...page.values.map((p) => ({ id: p.id, key: p.key, name: p.name, style: p.style, type: p.projectTypeKey })));
     if (page.isLast || !page.values.length) break;
     startAt += page.values.length;
@@ -48,7 +57,7 @@ export async function loadSite() {
   const usage = {}, schemes = {};
   const classic = projects.filter((p) => p.style === 'classic');
   await pool(classic, 6, async (p) => {
-    const r = await jira(route`/rest/api/3/workflowscheme/project?projectId=${p.id}`).catch(() => null);
+    const r = await call(route`/rest/api/3/workflowscheme/project?projectId=${p.id}`).catch(() => null);
     const scheme = r?.values?.[0]?.workflowScheme;
     if (!scheme) return;
     schemes[p.id] = scheme.issueTypeMappings || {};
@@ -61,9 +70,9 @@ export async function loadSite() {
   const screenHasResolution = [];
   const screenErrors = [];
   await pool(screenIds, 6, async (id) => {
-    const tabs = await jira(route`/rest/api/3/screens/${id}/tabs`).catch((e) => { screenErrors.push(`${id}: ${e.message}`); return []; });
+    const tabs = await call(route`/rest/api/3/screens/${id}/tabs`).catch((e) => { screenErrors.push(`${id}: ${e.message}`); return []; });
     for (const tab of tabs) {
-      const fields = await jira(route`/rest/api/3/screens/${id}/tabs/${tab.id}/fields`).catch((e) => { screenErrors.push(`${id}/${tab.id}: ${e.message}`); return []; });
+      const fields = await call(route`/rest/api/3/screens/${id}/tabs/${tab.id}/fields`).catch((e) => { screenErrors.push(`${id}/${tab.id}: ${e.message}`); return []; });
       if (fields.some((f) => f.id === 'resolution')) { screenHasResolution.push(String(id)); return; }
     }
   });
@@ -134,10 +143,50 @@ export async function measure(site, report) {
   return report;
 }
 
+// ---------- the watch: what changed since the last proof ----------
+// Every proof (the daily scheduled one, and every check an admin runs) is compared with the previous one.
+// A finding that appears is a regression someone introduced by editing a workflow; one that disappears
+// was fixed. The last 60 changes are kept so the page can say what changed and when.
+const findingKey = (f) => `${f.property}|${f.subject || ''}`;
+function snapshotOf(report) {
+  return Object.fromEntries(report.results.map((r) => [r.workflow.id, { name: r.workflow.name, findings: r.findings.map((f) => ({ key: findingKey(f), title: f.title, subject: f.subject })) }]));
+}
+export async function recordProof(report, by) {
+  const snap = snapshotOf(report), prev = await kvs.get('watch:snapshot');
+  const at = new Date().toISOString(), changes = [];
+  if (prev) {
+    for (const [id, cur] of Object.entries(snap)) {
+      const before = new Set((prev[id]?.findings || []).map((f) => f.key));
+      for (const f of cur.findings) if (!before.has(f.key)) changes.push({ kind: prev[id] ? 'new' : 'new workflow', workflow: cur.name, title: f.title, subject: f.subject });
+    }
+    for (const [id, old] of Object.entries(prev)) {
+      const now = new Set((snap[id]?.findings || []).map((f) => f.key));
+      for (const f of old.findings) if (!now.has(f.key)) changes.push({ kind: snap[id] ? 'fixed' : 'workflow removed', workflow: old.name, title: f.title, subject: f.subject });
+    }
+  }
+  const history = (await kvs.get('watch:history')) || [];
+  if (changes.length) history.unshift({ at, by, changes: changes.slice(0, 50) });
+  await kvs.set('watch:history', history.slice(0, 60));
+  await kvs.set('watch:snapshot', snap);
+  const last = { at, by, workflows: report.results.length, withFindings: report.results.filter((r) => r.findings.length).length };
+  await kvs.set('watch:last', last);
+  return { last, changes };
+}
+
+// The scheduled trigger: once a day, prove every workflow again with nobody watching.
+export async function watch() {
+  const report = checkSite(await loadSite({ asApp: true }));
+  const { changes } = await recordProof(report, 'daily watch');
+  console.log(`Interlock watch: ${report.results.length} workflows, ${changes.length} changes since the last proof`);
+}
+
+resolver.define('watchStatus', async () => ({ last: await kvs.get('watch:last'), history: ((await kvs.get('watch:history')) || []).slice(0, 10) }));
+
 resolver.define('checkSite', async (req) => {
   const site = await loadSite();
   // the proof comes back first; live counts follow in a second call (measureSite) so the page paints fast
   const report = checkSite(site, req.payload?.rules || {});
+  report.watch = await recordProof(report, req.context.accountId).catch(() => null);
   // the UI draws each workflow, so it gets the models too (statuses and transitions only)
   const statuses = new Map(Object.entries(site.statuses));
   report.models = Object.fromEntries(site.workflows.map((w) => [w.id, buildModel(w, statuses, { screenHasResolution: new Set(site.screenHasResolution) })]));

@@ -76,7 +76,14 @@ modules:
           type: string
           required: true
           description: The status every route must pass first, for example Review.
+  # Prove every workflow again once a day and record what changed since the last proof.
+  scheduledTrigger:
+    - key: interlock-watch
+      function: watch
+      interval: day
   function:
+    - key: watch
+      handler: index.watch
     - key: resolver
       handler: index.handler
     - key: checkWorkflows
@@ -95,6 +102,7 @@ permissions:
     - read:jira-work
     - write:jira-work
     - read:jira-user
+    - storage:app
 app:
   runtime:
     name: nodejs24.x
