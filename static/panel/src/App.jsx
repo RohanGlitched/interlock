@@ -81,7 +81,7 @@ export default function App() {
         <div className="il-notice" role="status"><Lamp state="green" />{notice.msg}
           {notice.undo && <button className="il-link" onClick={async () => {
             const u = notice.undo; setNotice({ msg: 'Taking the fix back and proving the site again…' });
-            try { await invoke('fix', { ...u, mode: 'undo' }); await recheck(`Undone: ${u.transitions.join(', ')} in ${u.name} no longer change the resolution.`); }
+            try { await invoke('fix', { ...u, mode: 'undo' }); await recheck(`Undone: ${u.transitions.join(', ')} in ${u.name} no longer ${u.transitions.length === 1 ? 'changes' : 'change'} the resolution.`); }
             catch (e) { setNotice({ msg: 'Could not undo the fix: ' + (e.message || e) }); }
           }}>Undo</button>}
           <button className="il-link" onClick={() => setNotice(null)}>Dismiss</button>
