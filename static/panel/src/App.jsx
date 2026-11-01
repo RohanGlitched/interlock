@@ -170,12 +170,11 @@ export default function App() {
                 <button aria-current={r.workflow.id === sel.workflow.id ? 'true' : undefined} className={`il-lever ${member ? 'member' : ''} ${r.workflow.id === sel.workflow.id ? 'pulled' : ''}`} onClick={() => { setSelId(r.workflow.id); setFocus(null); setTouched(true); if (!frozen) setFrozen(ranked.map((x) => x.workflow.id)); }}>
                   <span className="handle" aria-hidden="true" />
                   <LeverName name={r.workflow.name} usage={member ? r.usage : g.members.flatMap((x) => x.usage)} copies={member ? 0 : g.members.length} />
-                  <span className="count">{(() => { const n = g.members.reduce((a, x) => { const c = countsOf(x); return { own: a.own + c.own, left: a.left + c.left }; }, { own: 0, left: 0 });
-                    const m = member ? countsOf(r) : n; return m.own ? <span className="live" title={`${m.own} work items already in the state a proved route leads to`}>{m.own}<span className="sr"> work items already wrong,</span></span>
+                  <span className="count">{(() => { const m = countsOf(r); return m.own ? <span className="live" title={`${m.own} work items already in the state a proved route leads to`}>{m.own}<span className="sr"> work items already wrong,</span></span>
                     : m.left ? <span className="live left" title={`${m.left} work items left over in statuses no route reaches today`}>{m.left}<span className="sr"> work items left over,</span></span> : null; })()}{r.findings.length ? <span title={`${r.findings.length} ${r.findings.length === 1 ? 'finding' : 'findings'}${!member && g.members.length > 1 ? ' in each copy' : ''}`}><Lamp state="red" />{r.findings.length}<span className="sr"> {r.findings.length === 1 ? 'finding' : 'findings'}</span></span> : <><Lamp state="green" /><span className="sr">no findings</span></>}</span>
                 </button>
               );
-              const open = openGroups[g.key] || g.members.some((x, i) => i > 0 && x.workflow.id === sel.workflow.id);
+              const open = openGroups[g.key] ?? g.members.some((x, i) => i > 0 && x.workflow.id === sel.workflow.id);
               return (
                 <li key={g.key}>
                   {lever(g.members[0])}
@@ -324,7 +323,10 @@ function Diagram({ model, result, focus }) {
   }, [model]);
   const bad = new Set(result.findings.filter((f) => f.status && f.property !== 'unreachable').map((f) => f.status));
   // with a finding in focus, its own statuses are the red ones (all the statuses that finding is about)
-  const focusSet = focus ? new Set(result.findings.filter((f) => f.property === focus.property && f.status).map((f) => f.status)) : null;
+  // (a rule finding is about its target and the status it skips; one nobody can use, about the transition's ends)
+  const focusSet = focus ? new Set(focus.property === 'mustPass' ? [focus.rule?.target, focus.rule?.via].filter(Boolean)
+    : focus.property === 'nobody' ? model.transitions.filter((t) => String(t.id) === String(focus.transition)).flatMap((t) => [...t.from, t.to])
+    : result.findings.filter((f) => f.property === focus.property && f.status).map((f) => f.status)) : null;
   const unreachable = new Set(result.findings.filter((f) => f.property === 'unreachable').map((f) => f.status));
   const route = focus?.route?.hops || [];
   const routeKey = new Set(route.map((h) => `${h.transitionId}:${h.from}`));
