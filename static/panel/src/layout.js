@@ -5,7 +5,23 @@ export const BLOCK_W = 170, BLOCK_H = 42, COL = 236, ROW = 82, TOP = 92, LEFT = 
 
 const ORDER = { TODO: 0, IN_PROGRESS: 1, DONE: 2 };
 
-export function layout(model) {
+// The same diagram can run top to bottom: columns become rows. The page picks whichever fills its frame
+// better, so a short, wide workflow in a tall frame is drawn large instead of in a strip.
+export const VCOL = 204, VROW = 96;
+export function layout(model, vertical = false) {
+  const h = layoutLine(model);
+  if (!vertical) return h;
+  const pos = new Map();
+  let rows = 1, cols = 1;
+  for (const [id, p] of h.pos) {
+    const ci = Math.round((p.x - LEFT) / COL), ri = Math.round((p.y - TOP) / ROW);
+    pos.set(id, { x: LEFT + ri * VCOL, y: TOP + ci * VROW });
+    rows = Math.max(rows, ri + 1); cols = Math.max(cols, ci + 1);
+  }
+  return { pos, vertical: true, width: LEFT * 2 + (rows - 1) * VCOL + BLOCK_W, height: TOP + cols * VROW + 40 };
+}
+
+function layoutLine(model) {
   const directed = model.transitions.filter((t) => t.type !== 'GLOBAL');
   const dist = new Map([[model.initial, 0]]), q = [model.initial];
   while (q.length) {
@@ -72,7 +88,17 @@ export function tracks(model) {
 
 // A track between two blocks: leaves the right edge, enters the left edge; tracks that run backwards or
 // stay in one column loop under the line so they never cross a block.
-export function trackPath(a, b, lane = 0) {
+export function trackPath(a, b, lane = 0, vertical = false) {
+  if (vertical) {
+    // top to bottom: leave the bottom edge, enter the top edge; tracks that run back loop round the right
+    if (b.y > a.y + 4) {
+      const x1 = a.x + BLOCK_W / 2 + lane * 8 - 12, y1 = a.y + BLOCK_H, x2 = b.x + BLOCK_W / 2 + lane * 8 - 12, y2 = b.y, dy = (y2 - y1) * 0.5;
+      return `M${x1},${y1} C${x1},${y1 + dy} ${x2},${y2 - dy} ${x2},${y2}`;
+    }
+    const sx = a.x + BLOCK_W, sy = a.y + BLOCK_H / 2 + 6, ex = b.x + BLOCK_W, ey = b.y + BLOCK_H / 2 - 6;
+    const bulge = Math.max(sx, ex) + 22 + lane * 9;
+    return `M${sx},${sy} C${bulge},${sy} ${bulge},${ey} ${ex},${ey}`;
+  }
   const x1 = a.x + BLOCK_W, y1 = a.y + BLOCK_H / 2, x2 = b.x, y2 = b.y + BLOCK_H / 2;
   if (x2 > x1 + 4) {
     const dx = (x2 - x1) * 0.5;
@@ -84,7 +110,9 @@ export function trackPath(a, b, lane = 0) {
 }
 
 // A "from any status" transition drops from the overhead rail onto the top of its block.
-export function globalPath(b, k) {
+export function globalPath(b, k, vertical = false) {
+  // top to bottom: the rail runs down the left edge and each drop runs along the gap above its block's row
+  if (vertical) { const x = b.x + 22 + (k % 3) * 12, y = b.y - 24 - (k % 2) * 6; return `M16,${y} L${x},${y} L${x},${b.y}`; }
   const x = b.x + BLOCK_W / 2 + (k % 3) * 14 - 14;
   return `M${x},34 L${x},${b.y}`;
 }

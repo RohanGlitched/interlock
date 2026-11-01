@@ -1,7 +1,7 @@
 // Interlock: every workflow on the site checked like a railway interlocking. The lever frame lists the
 // workflows, the track diagram shows one of them, and the interlocking table lists what can go wrong,
 // each with the exact route, which can be replayed on a real work item to prove it.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke, openIssue, openPath } from './bridge.js';
 import { check, explore, PROPERTIES } from '../../../engine/interlock.mjs';
 import { layout, tracks, trackPath, globalPath, BLOCK_W, BLOCK_H } from './layout.js';
@@ -123,12 +123,13 @@ export default function App() {
             <button role="tab" aria-selected={filter === 'all'} className={filter === 'all' ? 'on' : ''} onClick={() => setFilter('all')}>All <span>{results.length}</span></button>
           </div>
           {!results.some((r) => r.workflow.name === 'Ship: Software delivery workflow') && <Demo onDone={async (msg) => { await recheck(msg); setSelId((id) => id); setPendingSelect('Ship: Software delivery workflow'); }} />}
+          <p className="il-lever-key" aria-hidden="true"><span className="live">12</span> work items already wrong <span><Lamp state="red" />3</span> findings</p>
           <ul>
             {list.map((r) => (
               <li key={r.workflow.id}>
                 <button className={`il-lever ${r.workflow.id === sel.workflow.id ? 'pulled' : ''}`} onClick={() => { setSelId(r.workflow.id); setFocus(null); setTouched(true); if (!frozen) setFrozen(ranked.map((x) => x.workflow.id)); }}>
                   <span className="handle" aria-hidden="true" />
-                  <span className="name" title={r.workflow.name}>{r.workflow.name}</span>
+                  <LeverName name={r.workflow.name} />
                   <span className="count">{liveOf(r) ? <span className="live" title={`${liveOf(r)} work items already in a wrong state`}>{liveOf(r)}</span> : null}{r.findings.length ? <span title={`${r.findings.length} ${r.findings.length === 1 ? 'finding' : 'findings'}`}><Lamp state="red" />{r.findings.length}</span> : <Lamp state="green" />}</span>
                 </button>
               </li>
@@ -172,11 +173,39 @@ function Boot() {
   );
 }
 
+// "PROC: Procurement Workflow v2" reads as the project key over the workflow's own name, two lines at most
+function LeverName({ name }) {
+  const m = /^([A-Z][A-Z0-9_]{1,11}): (.+)$/.exec(name);
+  return (
+    <span className="name" title={name}>
+      {m ? <><b className="proj">{m[1]}</b>{m[2]}</> : name}
+    </span>
+  );
+}
+
 export function Lamp({ state, style }) { return <span className={`il-lamp ${state}`} style={style} aria-hidden="true" />; }
 
 // ---------- the track diagram ----------
 function Diagram({ model, result, focus }) {
-  const { pos, width, height } = useMemo(() => layout(model), [model]);
+  // measure the frame, then draw the workflow left to right or top to bottom, whichever comes out larger
+  const [frame, setFrame] = useState(null);
+  const observer = useRef(null);
+  // a callback ref, so the frame is measured whenever the wrapper is (re)attached
+  const wrapRef = useCallback((el) => {
+    observer.current?.disconnect();
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    observer.current = new ResizeObserver(([e]) => setFrame((f) => {
+      const w = Math.round(e.contentRect.width), h = Math.round(e.contentRect.height);
+      return f && f.w === w && f.h === h ? f : { w, h };
+    }));
+    observer.current.observe(el);
+  }, []);
+  const { pos, width, height, vertical } = useMemo(() => {
+    const h = layout(model), v = layout(model, true);
+    if (!frame || frame.w < 50 || frame.h < 50) return h;
+    const fit = (l) => Math.min(frame.w / l.width, (frame.h - 60) / l.height);
+    return fit(v) > fit(h) * 1.15 ? v : h;
+  }, [model, frame]);
   const order = useMemo(() => { // the order in which the explorer first reaches each status
     const seen = explore(model), first = new Map(); let i = 0;
     for (const n of seen.values()) if (!first.has(n.s)) first.set(n.s, i++);
@@ -221,7 +250,7 @@ function Diagram({ model, result, focus }) {
 
   const globals = model.transitions.filter((t) => t.type === 'GLOBAL');
   return (
-    <div className={`il-diagram-wrap ${zoom > 1 ? 'zoomed' : 'fit'}`}>
+    <div ref={wrapRef} className={`il-diagram-wrap ${zoom > 1 ? 'zoomed' : 'fit'} ${vertical ? 'vertical' : ''}`}>
       <div className="il-zoom" role="group" aria-label="Zoom the track diagram">
         <button onClick={() => setZoom((z) => Math.max(1, z - 0.5))} disabled={zoom <= 1} aria-label="Zoom out">−</button>
         <button onClick={() => setZoom(1)} disabled={zoom === 1}>Fit</button>
@@ -232,11 +261,13 @@ function Diagram({ model, result, focus }) {
         <defs>
           <filter id="il-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.4" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
         </defs>
-        <line className="il-rail" x1="16" x2={width - 16} y1="34" y2="34" />
+        {vertical
+          ? <line className="il-rail" x1="16" x2="16" y1="34" y2={height - 20} />
+          : <line className="il-rail" x1="16" x2={width - 16} y1="34" y2="34" />}
         <text className="il-rail-label" x="18" y="24">From any status</text>
         {globals.map((t, k) => {
           const b = pos.get(t.to); if (!b) return null;
-          const d = globalPath(b, k), on = routeKey.has(`${t.id}:${route.find((h) => h.transitionId === t.id)?.from}`);
+          const d = globalPath(b, k, vertical), on = routeKey.has(`${t.id}:${route.find((h) => h.transitionId === t.id)?.from}`);
           return <path key={t.id} ref={(el) => { if (el) pathRefs.current[`${t.id}:*`] = el; }} d={d} className={`il-track global ${on ? 'route' : ''}`} />;
         })}
         {tracks(model).map((tr, k) => {
@@ -244,7 +275,7 @@ function Diagram({ model, result, focus }) {
           const ids = tr.transitions.map((t) => `${t.id}:${tr.from}`);
           const on = ids.some((id) => routeKey.has(id));
           return (
-            <path key={`${tr.from}>${tr.to}`} d={trackPath(a, b, k % 4)} className={`il-track ${b.x <= a.x ? 'back' : ''} ${on ? 'route' : ''}`}
+            <path key={`${tr.from}>${tr.to}`} d={trackPath(a, b, k % 4, vertical)} className={`il-track ${(vertical ? b.y <= a.y : b.x <= a.x) ? 'back' : ''} ${on ? 'route' : ''}`}
               ref={(el) => { if (el) for (const id of ids) pathRefs.current[id] = el; }}>
               <title>{tr.transitions.map((t) => t.name).join(', ')}</title>
             </path>
