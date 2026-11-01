@@ -23,6 +23,7 @@ async function devInvoke(fn, payload = {}) {
     for (const h of payload.hops) { await new Promise((r) => setTimeout(r, 500)); steps.push({ step: h.transition, status: h.toName, category: 'done', resolution: null }); }
     return { key: 'DESIGN-41', steps };
   }
+  if (fn === 'saveRules') return { rules: {} };
   if (fn === 'markIntended') {
     const all = JSON.parse(localStorage.getItem('il-intended') || '{}');
     const k = `${payload.workflowId}|${payload.property}|${payload.subject || ''}`;

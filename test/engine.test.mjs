@@ -86,3 +86,13 @@ test('a route to a successful outcome that skips every approval step is found', 
   assert.deepEqual(f.map((x) => x.subject), ['Done']);
   assert.deepEqual(f[0].route.hops.map((h) => h.transition), ['Emergency close']);
 });
+
+test('declining at the approval step and coming back later is not an approval', () => {
+  const st = new Map([...statuses, ['6', { name: 'Awaiting approval', category: 'IN_PROGRESS' }], ['7', { name: 'Declined', category: 'DONE' }]]);
+  const w = { id: 'w', name: 'W', statuses: [{ statusReference: '1' }, { statusReference: '6', properties: { 'approval.groups': 'cab' } }, { statusReference: '4' }, { statusReference: '7' }],
+    transitions: [{ id: '0', type: 'INITIAL', toStatusReference: '1' }, tr('1', 'Ask', ['1'], '6'), tr('2', 'Approve', ['6'], '4', { actions: setRes }),
+      tr('3', 'Decline', ['6'], '7', { actions: setRes }), tr('4', 'Reopen', ['7'], '1', { actions: clearRes }), tr('5', 'Close', ['1'], '4', { actions: setRes })] };
+  // Close from To Do is only reachable again after a decline, so the route To Do -> Close -> Done is unapproved
+  const f = verify(w, st).findings.filter((x) => x.property === 'approvalSkipped');
+  assert.deepEqual(f.map((x) => x.subject), ['Done']);
+});

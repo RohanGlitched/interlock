@@ -156,7 +156,8 @@ export async function measure(site, report) {
 // was fixed. The last 60 changes are kept so the page can say what changed and when.
 const findingKey = (f) => `${f.property}|${f.subject || ''}`;
 function snapshotOf(report) {
-  return Object.fromEntries(report.results.map((r) => [r.workflow.id, { name: r.workflow.name, findings: r.findings.map((f) => ({ key: findingKey(f), title: f.title, subject: f.subject })) }]));
+  // only workflows with findings are kept, so the snapshot stays small on a site with thousands of workflows
+  return Object.fromEntries(report.results.filter((r) => r.findings.length).map((r) => [r.workflow.id, { name: r.workflow.name, findings: r.findings.map((f) => ({ key: findingKey(f), title: f.title, subject: f.subject })) }]));
 }
 export async function recordProof(report, by) {
   const snap = snapshotOf(report), prev = await kvs.get('watch:snapshot');
@@ -166,11 +167,11 @@ export async function recordProof(report, by) {
   if (prev && !report.unreadableScreens) {
     for (const [id, cur] of Object.entries(snap)) {
       const before = new Set((prev[id]?.findings || []).map((f) => f.key));
-      for (const f of cur.findings) if (!before.has(f.key)) changes.push({ kind: prev[id] ? 'new' : 'new workflow', workflow: cur.name, title: f.title, subject: f.subject });
+      for (const f of cur.findings) if (!before.has(f.key)) changes.push({ kind: 'new', workflow: cur.name, title: f.title, subject: f.subject });
     }
     for (const [id, old] of Object.entries(prev)) {
       const now = new Set((snap[id]?.findings || []).map((f) => f.key));
-      for (const f of old.findings) if (!now.has(f.key)) changes.push({ kind: snap[id] ? 'fixed' : 'workflow removed', workflow: old.name, title: f.title, subject: f.subject });
+      for (const f of old.findings) if (!now.has(f.key)) changes.push({ kind: 'fixed', workflow: old.name, title: f.title, subject: f.subject });
     }
   }
   // the snapshot is written first, so a failure later can never leave the watch diffing an old proof
@@ -188,7 +189,7 @@ export async function recordProof(report, by) {
 
 // The scheduled trigger: once a day, prove every workflow again with nobody watching.
 export async function watch() {
-  const report = checkSite(await loadSite({ asApp: true, fresh: true }));
+  const report = checkSite(await loadSite({ asApp: true, fresh: true }), (await kvs.get('rules')) || {});
   const { changes } = await recordProof(report, 'daily watch');
   console.log(`Interlock watch: ${report.results.length} workflows, ${changes.length} changes since the last proof`);
 }
@@ -196,6 +197,14 @@ export async function watch() {
 // A finding an admin has looked at and decided is intended (a pre-approved standard-change shortcut, say)
 // is recorded with who, when and why. It stops counting as a problem but stays visible, and can be undone.
 const intendedKey = (workflowId, property, subject) => `${workflowId}|${property}|${subject || ''}`;
+resolver.define('saveRules', async (req) => {
+  const all = (await kvs.get('rules')) || {};
+  const { workflowId, rules } = req.payload;
+  if (rules?.length) all[workflowId] = rules.slice(0, 20); else delete all[workflowId];
+  await kvs.set('rules', all);
+  return { rules: all };
+});
+
 resolver.define('markIntended', async (req) => {
   const { workflowId, property, subject, reason, undo } = req.payload;
   const all = (await kvs.get('intended')) || {};
@@ -214,7 +223,11 @@ resolver.define('watchStatus', async () => ({ last: await kvs.get('watch:last'),
 resolver.define('checkSite', async (req) => {
   const site = await loadSite({ fresh: !!req.payload?.fresh });
   // the proof comes back first; live counts follow in a second call (measureSite) so the page paints fast
-  const report = checkSite(site, req.payload?.rules || {});
+  // the team's own rules ("Done only through Code Review") are kept in app storage, so the page and the
+  // daily watch prove the same thing
+  const rules = (await kvs.get('rules').catch(() => null)) || {};
+  const report = checkSite(site, rules);
+  report.rules = rules;
   report.watch = await recordProof(report, req.context.accountId).catch(() => null);
   report.intended = (await kvs.get('intended').catch(() => null)) || {};
   // a compact line per workflow with findings, so a proof can be audited from the app's logs
@@ -287,8 +300,9 @@ resolver.define('replay', async (req) => {
     steps.push({ step: h.transition, ...(await read()) });
   }
   // automation rules run a moment after a transition; look again so a rule that fixes the resolution counts
-  if (!steps.at(-1)?.error && steps.length > 1) {
-    await new Promise((r) => setTimeout(r, 6000));
+  // (only for routes short enough to stay well inside the function's time limit)
+  if (!steps.at(-1)?.error && steps.length > 1 && hops.length <= 6) {
+    await new Promise((r) => setTimeout(r, 5000));
     const later = await read();
     const last = steps.at(-1);
     if (later.status !== last.status || later.resolution !== last.resolution) steps.push({ step: 'Six seconds later (automation)', ...later });

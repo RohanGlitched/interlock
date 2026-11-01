@@ -53,12 +53,14 @@ export default function App() {
   // re-check the selected workflow in the browser whenever its rules change
   const [intended, setIntended] = useState({});
   useEffect(() => { if (report?.intended) setIntended(report.intended); }, [report]);
+  // rules come from app storage with the proof, and every change is saved back
+  useEffect(() => { if (report?.rules) setRules(report.rules); }, [report]);
   const results = useMemo(() => {
     if (!report) return [];
     return report.results.map((r) => {
       const wfRules = rules[r.workflow.id];
       const model = { ...report.models[r.workflow.id], teamManaged: r.teamManaged };
-      const all = wfRules?.length ? check(model, { mustPass: wfRules }) : r.findings;
+      const all = wfRules?.length || report.rules?.[r.workflow.id]?.length ? check(model, { mustPass: wfRules || [] }) : r.findings;
       const isIntended = (f) => intended[`${r.workflow.id}|${f.property}|${f.subject || ''}`];
       return { ...r, findings: all.filter((f) => !isIntended(f)), intended: all.filter(isIntended).map((f) => ({ ...f, record: isIntended(f) })) };
     });
@@ -129,7 +131,7 @@ export default function App() {
           <Diagram key={sel.workflow.id} model={model} result={sel} focus={focus} />
         </main>
         <Table result={sel} model={model} focus={focus} setFocus={setFocus} replays={replays} setReplays={setReplays} onFixed={recheck} onIntended={markIntended}
-          rules={rules[sel.workflow.id] || []} setRules={(r) => setRules((x) => ({ ...x, [sel.workflow.id]: r }))} />
+          rules={rules[sel.workflow.id] || []} setRules={(r) => { setRules((x) => ({ ...x, [sel.workflow.id]: r })); invoke('saveRules', { workflowId: sel.workflow.id, rules: r }).catch(() => {}); }} />
       </div>
     </div>
   );

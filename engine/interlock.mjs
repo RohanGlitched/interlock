@@ -108,6 +108,33 @@ export function explore(model, { skip = null } = {}) {
   return seen;
 }
 
+// Breadth-first over (status, resolution set, approved). Work counts as approved only when it leaves an
+// approval step for an outcome that is not negative (declining and coming back later is not an approval).
+function exploreApproval(model, approvals) {
+  const name = new Map(model.statuses.map((s) => [s.id, s.name]));
+  const cat = new Map(model.statuses.map((s) => [s.id, s.category]));
+  const usable = model.transitions.filter(usableBySomeone);
+  const k3 = (s, r, a) => `${s}|${r ? 1 : 0}|${a ? 1 : 0}`;
+  const seen = new Map([[k3(model.initial, false, false), { s: model.initial, r: false, a: false, prev: null, via: null }]]);
+  const queue = [{ s: model.initial, r: false, a: false }];
+  while (queue.length) {
+    const cur = queue.shift();
+    for (const t of usable) {
+      if (!t.from.includes(cur.s) || (t.type === 'GLOBAL' && t.to === cur.s)) continue;
+      let r = cur.r;
+      if (model.teamManaged) r = cat.get(t.to) === 'DONE';
+      else if (t.resolution === 'set') r = true;
+      else if (t.resolution === 'clear') r = false;
+      const a = cur.a || (approvals.has(cur.s) && !NEGATIVE.test(name.get(t.to) || ''));
+      const k = k3(t.to, r, a);
+      if (seen.has(k)) continue;
+      seen.set(k, { s: t.to, r, a, prev: k3(cur.s, cur.r, cur.a), via: t });
+      queue.push({ s: t.to, r, a });
+    }
+  }
+  return seen;
+}
+
 function routeTo(seen, k, model) {
   const name = new Map(model.statuses.map((s) => [s.id, s.name]));
   const hops = [];
@@ -167,10 +194,10 @@ export function check(model, { mustPass = [] } = {}) {
   // Done statuses that name a negative outcome (cancelled, declined, rejected...) may be reached without one.
   const approvals = new Set(model.statuses.filter((s) => s.approval).map((s) => s.id));
   if (approvals.size && !approvals.has(model.initial)) {
-    const unapproved = explore(model, { skip: approvals });
+    const unapproved = exploreApproval(model, approvals);
     for (const s of model.statuses) {
       if (s.category !== 'DONE' || NEGATIVE.test(s.name)) continue;
-      const hit = [...unapproved.entries()].find(([, n]) => n.s === s.id);
+      const hit = [...unapproved.entries()].find(([, n]) => n.s === s.id && !n.a);
       if (hit) findings.push({ property: 'approvalSkipped', status: s.id, subject: s.name, route: routeTo(unapproved, hit[0], model) });
     }
   }
