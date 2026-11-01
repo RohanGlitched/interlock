@@ -224,3 +224,7 @@ button, select { font: inherit; color: inherit; }
 .il-evidence.now p { margin: 0; }
 .il-trace { margin: 6px 0 0; padding: 0; list-style: none; font-weight: 400; font-size: 12px; }
 .il-trace li { padding: 2px 0; }
+
+.il-bystatus { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 4px 0 0 !important; font-weight: 400; font-size: 12px; }
+.il-bystatus .other { flex-basis: 100%; color: var(--il-subtle, #626f86); }
+.il-trace li.on b { color: inherit; text-decoration: underline; text-underline-offset: 2px; }

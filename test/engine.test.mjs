@@ -96,3 +96,32 @@ test('declining at the approval step and coming back later is not an approval', 
   const f = verify(w, st).findings.filter((x) => x.property === 'approvalSkipped');
   assert.deepEqual(f.map((x) => x.subject), ['Done']);
 });
+
+// ---------- the history trace ----------
+import { lastStatusChange, waysOf } from '../engine/trace.mjs';
+const h = (created, ...items) => ({ created, items });
+const st = (from, to) => ({ field: 'status', fromString: from, toString: to });
+
+test('the trace reads the newest status change, whatever order Jira returns', () => {
+  const histories = [h('2024-01-03', st('Closed', 'Reopened')), h('2024-01-01', st('Open', 'Resolved'), { field: 'resolution', fromString: null, toString: 'Fixed' }), h('2024-01-02', st('Resolved', 'Closed'))];
+  assert.deepEqual(lastStatusChange(histories), { from: 'Closed', to: 'Reopened', effect: 'resolution left as it was', at: '2024-01-03', person: false });
+  assert.equal(lastStatusChange([...histories].reverse()).from, 'Closed');
+  assert.equal(lastStatusChange([h('2024-01-01', { field: 'summary' })]), null);
+});
+
+test('the trace counts routes and marks the ones ending in a flagged status', () => {
+  const issues = [
+    { key: 'A-1', histories: [h('2024-01-02', st('Accepted', 'Purchased'))] },
+    { key: 'A-2', histories: [h('2024-01-02', st('Accepted', 'Purchased'))] },
+    { key: 'A-3', histories: [h('2024-01-02', st('Review', 'Rejected'), { field: 'resolution', fromString: 'Done', toString: null })] },
+    { key: 'A-4', histories: [] },
+  ];
+  const t = waysOf(issues, ['Purchased']);
+  assert.equal(t.read, 3);
+  assert.equal(t.noStep, 1);
+  assert.equal(t.system, 3);
+  assert.equal(waysOf(issues, ['Purchased'], '2024-01-03').beforeSince, 3);
+  assert.equal(waysOf(issues, ['Purchased'], '2024-01-01').beforeSince, 0);
+  assert.equal(t.onProvedStatus, 2);
+  assert.deepEqual(t.ways.map((w) => [w.count, w.to, w.flagged, w.effect]), [[2, 'Purchased', true, 'resolution left as it was'], [1, 'Rejected', false, 'resolution cleared']]);
+});

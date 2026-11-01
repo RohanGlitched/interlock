@@ -24,7 +24,7 @@ async function devInvoke(fn, payload = {}) {
     return { key: 'DESIGN-41', steps };
   }
   if (fn === 'saveRules') return { rules: {} };
-  if (fn === 'traceItems') return { read: 50, ways: [{ from: 'Closed', to: 'Reopened', effect: 'resolution left as it was', count: 41, example: 'PROC-12' }, { from: 'Resolved', to: 'Reopened', effect: 'resolution cleared', count: 9, example: 'PROC-40' }] };
+  if (fn === 'traceItems') return { read: 50, ways: [{ from: 'Closed', to: 'Reopened', effect: 'resolution left as it was', count: 41, example: 'PROC-12', flagged: true }, { from: 'Resolved', to: 'Reopened', effect: 'resolution cleared', count: 9, example: 'PROC-40', flagged: false }], onProvedStatus: 41 };
   if (fn === 'markIntended') {
     const all = JSON.parse(localStorage.getItem('il-intended') || '{}');
     const k = `${payload.workflowId}|${payload.property}|${payload.subject || ''}`;

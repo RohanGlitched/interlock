@@ -3,6 +3,7 @@ import api, { route, assumeTrustedRoute } from '@forge/api';
 import { kvs } from '@forge/kvs';
 import { verify, buildModel } from '../engine/interlock.mjs';
 import { resolutionFor } from '../engine/resolution.mjs';
+import { waysOf } from '../engine/trace.mjs';
 
 // Interlock reads the site's workflow configuration as the signed-in admin, checks every workflow,
 // and can replay a finding on a scratch work item to prove it happens for real.
@@ -21,6 +22,13 @@ async function jiraApp(path, init) {
   const res = await api.asApp().requestJira(path, init);
   if (!res.ok) throw new Error(`Jira answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
   return res.status === 204 ? null : res.json();
+}
+
+// Display conditions hide the page from non-admins, but a resolver can be called directly, so the ones
+// that change what Interlock proves or records check the caller's global permission themselves.
+async function requireAdmin() {
+  const p = await jira(route`/rest/api/3/mypermissions?permissions=ADMINISTER`);
+  if (!p?.permissions?.ADMINISTER?.havePermission) throw new Error('Only Jira administrators can change what Interlock proves or records.');
 }
 
 async function pool(items, n, fn) { // run fn over items, n at a time
@@ -137,13 +145,16 @@ export async function measure(site, report) {
   await pool(jobs, 6, async ({ r, kinds, scope }) => {
     try {
       r.observed = {};
+      // and per flagged status, so each finding shows its own items and the rest are visibly something else
+      const perStatus = async (property, resClause) => Object.fromEntries(await Promise.all(r.findings.filter((f) => f.property === property && /^\d+$/.test(String(f.status)))
+        .map(async (f) => [f.subject, await count(`${scope} AND status = ${f.status} AND ${resClause}`)])));
       if (kinds.has('doneUnresolved')) {
         const [bad, done] = await Promise.all([count(`${scope} AND statusCategory = Done AND resolution IS EMPTY`), count(`${scope} AND statusCategory = Done`)]);
-        r.observed.doneUnresolved = { bad, of: done, jql: `${scope} AND statusCategory = Done AND resolution IS EMPTY` };
+        r.observed.doneUnresolved = { bad, of: done, jql: `${scope} AND statusCategory = Done AND resolution IS EMPTY`, byStatus: bad ? await perStatus('doneUnresolved', 'resolution IS EMPTY') : {} };
       }
       if (kinds.has('openResolved')) {
         const [bad, open] = await Promise.all([count(`${scope} AND statusCategory != Done AND resolution IS NOT EMPTY`), count(`${scope} AND statusCategory != Done`)]);
-        r.observed.openResolved = { bad, of: open, jql: `${scope} AND statusCategory != Done AND resolution IS NOT EMPTY` };
+        r.observed.openResolved = { bad, of: open, jql: `${scope} AND statusCategory != Done AND resolution IS NOT EMPTY`, byStatus: bad ? await perStatus('openResolved', 'resolution IS NOT EMPTY') : {} };
       }
     } catch (e) { r.observedError = e.message; }
   });
@@ -201,33 +212,24 @@ const intendedKey = (workflowId, property, subject) => `${workflowId}|${property
 // count the status changes that brought each one into its current state, with what happened to the
 // resolution on the way. This ties Jira's data back to the route the proof found.
 resolver.define('traceItems', async (req) => {
-  const { jql } = req.payload;
+  const { jql, flagged = [], since = null } = req.payload;
   const res = await jira(route`/rest/api/3/search/jql`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jql, maxResults: 50, fields: ['status', 'resolution'], expand: 'changelog' }),
+    body: JSON.stringify({ jql, maxResults: 50, fields: ['status'], expand: 'changelog' }),
   });
-  const ways = new Map();
-  let read = 0;
-  for (const issue of res.issues || []) {
-    const histories = issue.changelog?.histories || [];
-    // the last status change is the step that put the item where it is now
-    // (Jira returns history newest first on some sites and oldest first on others, so sort by date)
-    const last = histories.filter((h) => h.items.some((i) => i.field === 'status'))
-      .sort((x, y) => new Date(y.created) - new Date(x.created))[0];
-    if (!last) continue;
-    read++;
-    const st = last.items.find((i) => i.field === 'status');
-    const resItem = last.items.find((i) => i.field === 'resolution');
-    const effect = resItem ? (resItem.toString ? `resolution set to ${resItem.toString}` : 'resolution cleared') : 'resolution left as it was';
-    const k = `${st.fromString}→${st.toString}|${effect}`;
-    const w = ways.get(k) || { from: st.fromString, to: st.toString, effect, count: 0, example: issue.key };
-    w.count++;
-    ways.set(k, w);
-  }
-  return { read, ways: [...ways.values()].sort((a, b) => b.count - a.count).slice(0, 5) };
+  // search returns only part of a long history; fetch the newest page of the full changelog for those
+  const issues = await pool(res.issues || [], 6, async (issue) => {
+    const c = issue.changelog || {};
+    if ((c.total || 0) <= (c.histories || []).length) return { key: issue.key, histories: c.histories || [] };
+    const startAt = Math.max(0, c.total - 100);
+    const full = await jira(route`/rest/api/3/issue/${issue.key}/changelog?startAt=${startAt}&maxResults=100`).catch(() => null);
+    return { key: issue.key, histories: full?.values || c.histories || [] };
+  });
+  return waysOf(issues, flagged, since);
 });
 
 resolver.define('saveRules', async (req) => {
+  await requireAdmin();
   const all = (await kvs.get('rules')) || {};
   const { workflowId, rules } = req.payload;
   if (rules?.length) all[workflowId] = rules.slice(0, 20); else delete all[workflowId];
@@ -236,6 +238,7 @@ resolver.define('saveRules', async (req) => {
 });
 
 resolver.define('markIntended', async (req) => {
+  await requireAdmin();
   const { workflowId, property, subject, reason, undo } = req.payload;
   const all = (await kvs.get('intended')) || {};
   const k = intendedKey(workflowId, property, subject);

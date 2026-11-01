@@ -318,7 +318,7 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
                 <span><b>{f.title}</b>{list.length === 1 ? f.subject : `${list.length} statuses`}</span>
               </button>
               <Tiers f={f} obs={result.observed?.[property]} verdict={verdict} />
-              <Evidence obs={result.observed?.[property]} property={property} />
+              <Evidence obs={result.observed?.[property]} property={property} flagged={list.map((x) => x.subject)} fixAt={lastFix?.at} />
               {list.length > 1 && (
                 <div className="il-chips" role="group" aria-label={f.title}>
                   {list.map((x) => <button key={x.id} className={focus?.id === x.id ? 'on' : ''} onClick={() => setFocus(focus?.id === x.id ? null : x)}>{x.subject}</button>)}
@@ -410,24 +410,38 @@ function Tiers({ f, obs, verdict }) {
 
 // What Jira's own data says: how many work items in the projects using this workflow are already in
 // the state the proof says is reachable.
-function Evidence({ obs, property }) {
+function Evidence({ obs, property, flagged, fixAt }) {
   const [trace, setTrace] = useState(null);
   if (!obs) return null;
   const noun = property === 'doneUnresolved' ? ['done work item is unresolved', 'done work items are unresolved'] : ['open work item still has a resolution', 'open work items still have a resolution'];
   const link = `/issues/?jql=${encodeURIComponent(obs.jql)}`;
+  const byStatus = Object.entries(obs.byStatus || {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+  const elsewhere = obs.byStatus ? obs.bad - byStatus.reduce((t, [, n]) => t + n, 0) : 0;
   if (obs.bad > 0) {
     return (
       <div className="il-evidence now">
         <p>Happening now: {obs.bad.toLocaleString()} of {obs.of.toLocaleString()} {obs.bad === 1 ? noun[0] : noun[1]}. <button className="il-link" onClick={() => openPath(link)}>Show them</button>
-          {' '}{!trace && <button className="il-link" onClick={async () => { setTrace('loading'); try { setTrace(await invoke('traceItems', { jql: obs.jql })); } catch (e) { setTrace({ error: e.message }); } }}>How did they get there?</button>}</p>
+          {' '}{!trace && <button className="il-link" onClick={async () => { setTrace('loading'); try { setTrace(await invoke('traceItems', { jql: obs.jql, flagged, since: fixAt })); } catch (e) { setTrace({ error: e.message }); } }}>How did they get there?</button>}</p>
+        {(byStatus.length > 0 || elsewhere > 0) && (
+          <p className="il-bystatus">
+            {byStatus.map(([s, n]) => <span key={s}><b>{n.toLocaleString()}</b> in {s}</span>)}
+            {elsewhere > 0 && <span className="other"><b>{elsewhere.toLocaleString()}</b> in statuses no route reaches today{fixAt ? ', so they got there before the fix' : ': the workflow changed since, or something else put them there'}. Read their history to see which.</span>}
+          </p>
+        )}
         {trace === 'loading' && <p className="il-trace">Reading their history…</p>}
         {trace?.error && <p className="il-trace">{trace.error}</p>}
         {trace?.ways && (
           <ul className="il-trace">
             {trace.ways.map((w) => (
-              <li key={`${w.from}${w.to}${w.effect}`}><b>{w.count} of {trace.read}</b> came {w.from} → {w.to}, {w.effect} <button className="il-link" onClick={() => openIssue(w.example)}>{w.example}</button></li>
+              <li key={`${w.from}${w.to}${w.effect}`} className={w.flagged ? 'on' : ''}><b>{w.count} of {trace.read}</b> came {w.from} → {w.to}, {w.effect}{w.flagged ? ', the step the proof flagged' : ''} <button className="il-link" onClick={() => openIssue(w.example)}>{w.example}</button></li>
             ))}
           </ul>
+        )}
+        {trace?.beforeSince > 0 && (
+          <p className="il-trace"><b>{trace.beforeSince} of {trace.read}</b> got there before Interlock's fix on {new Date(fixAt).toLocaleDateString()}: the fix stops new ones, these are left to clean up with a bulk edit. <button className="il-link" onClick={() => openPath(link)}>Show them</button></p>
+        )}
+        {(trace?.noStep > 0 || trace?.system > 0) && (
+          <p className="il-trace">{[trace.noStep > 0 && `${trace.noStep} were created or imported in this state`, trace.system > 0 && `${trace.system} got there through a system change with no author, such as a migration`].filter(Boolean).join('; ')}: no route is to blame for those.</p>
         )}
       </div>
     );

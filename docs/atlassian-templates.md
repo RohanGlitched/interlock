@@ -64,7 +64,7 @@ Whether a shortcut like "Mark as done" is acceptable is a policy decision (stand
 A proof says a route exists. Interlock then replays the route through Jira's own transitions API on a new work item, filling in each transition screen the way a person would, and reads back the status and resolution after every step.
 
 - **Change Management (ITS):** a change request is created in Review, declined (the Decline screen asks for a resolution and the replay chose Declined, as a person would), then sent "Back to review". **ITS-6267 ended up open in Review and still resolved as Declined**, and it was unchanged when Interlock looked again a few seconds later (an automation rule on a slower schedule could still change it; none did while we watched). Any change request that is declined and then reconsidered counts as resolved: it drops out of every filter, report and SLA that looks for unresolved changes.
-- **Procurement (PROC):** "Demo Fast Track" takes a request to Purchased with no resolution. PROC-126 confirmed it. On the demo site, **72 of the 109 done procurement requests were unresolved**, so every report counted them as still open.
+- **Procurement (PROC):** "Demo Fast Track" takes a request to Purchased with no resolution. PROC-126 confirmed it. On the demo site, **72 of the 109 done procurement requests were unresolved** (73 of 110 after our replay, PROC-126, reached Purchased the same way), so every report counted them as still open.
 - **Web design (DESIGN):** 1 of 1 launched task was unresolved.
 
 ## The fix
