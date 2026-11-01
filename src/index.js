@@ -29,53 +29,57 @@ async function pool(items, n, fn) { // run fn over items, n at a time
 }
 
 // Everything the checker needs, in one pass over the site's configuration.
-export async function loadSite({ asApp = false } = {}) {
+export async function loadSite({ asApp = false, fresh = false } = {}) {
   const call = asApp ? jiraApp : jira;
-  const workflows = [];
-  for (let startAt = 0; ;) {
-    const page = await call(route`/rest/api/3/workflows/search?startAt=${startAt}&maxResults=50&expand=values.transitions`);
-    workflows.push(...page.values);
-    if (page.isLast || !page.values.length) break;
-    startAt += page.values.length;
-  }
-  // a large site has thousands of statuses; the search pages at 200
-  const statuses = {};
-  for (let startAt = 0; ;) {
-    const page = await call(route`/rest/api/3/statuses/search?startAt=${startAt}&maxResults=200`);
-    for (const s of page.values) statuses[s.id] = { name: s.name, category: s.statusCategory };
-    if (page.isLast || !page.values.length) break;
-    startAt += page.values.length;
-  }
-  const projects = [];
-  for (let startAt = 0; ;) {
-    const page = await call(route`/rest/api/3/project/search?startAt=${startAt}&maxResults=50`);
-    projects.push(...page.values.map((p) => ({ id: p.id, key: p.key, name: p.name, style: p.style, type: p.projectTypeKey })));
-    if (page.isLast || !page.values.length) break;
-    startAt += page.values.length;
-  }
-  // Which projects and work types use each company-managed workflow (via workflow schemes).
+  const pages = async (path, take) => { // follow startAt paging until the last page
+    for (let startAt = 0; ;) {
+      const page = await call(path(startAt));
+      take(page.values);
+      if (page.isLast || !page.values.length) return;
+      startAt += page.values.length;
+    }
+  };
+  // workflows, statuses (a large site has thousands; the search pages at 200) and projects, read together
+  const workflows = [], statuses = {}, projects = [];
+  await Promise.all([
+    pages((at) => route`/rest/api/3/workflows/search?startAt=${at}&maxResults=50&expand=values.transitions`, (v) => workflows.push(...v)),
+    pages((at) => route`/rest/api/3/statuses/search?startAt=${at}&maxResults=200`, (v) => { for (const s of v) statuses[s.id] = { name: s.name, category: s.statusCategory }; }),
+    pages((at) => route`/rest/api/3/project/search?startAt=${at}&maxResults=50`, (v) => projects.push(...v.map((p) => ({ id: p.id, key: p.key, name: p.name, style: p.style, type: p.projectTypeKey })))),
+  ]);
+  // Which projects and work types use each company-managed workflow (via workflow schemes), and which
+  // transition screens collect the Resolution field (those set it on the way through). Both are read
+  // together; screen answers are remembered for 10 minutes because screens rarely change and a site can
+  // have hundreds of them.
   const usage = {}, schemes = {};
   const classic = projects.filter((p) => p.style === 'classic');
-  await pool(classic, 6, async (p) => {
-    const r = await call(route`/rest/api/3/workflowscheme/project?projectId=${p.id}`).catch(() => null);
-    const scheme = r?.values?.[0]?.workflowScheme;
-    if (!scheme) return;
-    schemes[p.id] = scheme.issueTypeMappings || {};
-    const add = (name, issueType) => { (usage[name] ||= []).push({ project: p.key, projectId: p.id, issueType }); };
-    if (scheme.defaultWorkflow) add(scheme.defaultWorkflow, null);
-    for (const [issueType, name] of Object.entries(scheme.issueTypeMappings || {})) add(name, issueType);
-  });
-  // Transition screens that collect the Resolution field set it on the way through.
-  const screenIds = [...new Set(workflows.flatMap((w) => w.transitions.map((t) => t.transitionScreen?.parameters?.screenId).filter(Boolean)))];
-  const screenHasResolution = [];
+  const screenIds = [...new Set(workflows.flatMap((w) => w.transitions.map((t) => t.transitionScreen?.parameters?.screenId).filter(Boolean)))].map(String);
+  const cached = fresh ? null : await kvs.get('cache:screens').catch(() => null);
+  const known = cached && Date.now() - cached.at < 10 * 60e3 ? cached.screens : {};
+  const screens = { ...known };
   const screenErrors = [];
-  await pool(screenIds, 6, async (id) => {
-    const tabs = await call(route`/rest/api/3/screens/${id}/tabs`).catch((e) => { screenErrors.push(`${id}: ${e.message}`); return []; });
-    for (const tab of tabs) {
-      const fields = await call(route`/rest/api/3/screens/${id}/tabs/${tab.id}/fields`).catch((e) => { screenErrors.push(`${id}/${tab.id}: ${e.message}`); return []; });
-      if (fields.some((f) => f.id === 'resolution')) { screenHasResolution.push(String(id)); return; }
-    }
-  });
+  await Promise.all([
+    pool(classic, 10, async (p) => {
+      const r = await call(route`/rest/api/3/workflowscheme/project?projectId=${p.id}`).catch(() => null);
+      const scheme = r?.values?.[0]?.workflowScheme;
+      if (!scheme) return;
+      schemes[p.id] = scheme.issueTypeMappings || {};
+      const add = (name, issueType) => { (usage[name] ||= []).push({ project: p.key, projectId: p.id, issueType }); };
+      if (scheme.defaultWorkflow) add(scheme.defaultWorkflow, null);
+      for (const [issueType, name] of Object.entries(scheme.issueTypeMappings || {})) add(name, issueType);
+    }),
+    pool(screenIds.filter((id) => !(id in known)), 10, async (id) => {
+      const tabs = await call(route`/rest/api/3/screens/${id}/tabs`).catch((e) => { screenErrors.push(`${id}: ${e.message}`); return null; });
+      if (!tabs) return;
+      screens[id] = false;
+      for (const tab of tabs) {
+        const fields = await call(route`/rest/api/3/screens/${id}/tabs/${tab.id}/fields`).catch((e) => { screenErrors.push(`${id}/${tab.id}: ${e.message}`); return []; });
+        if (fields.some((f) => f.id === 'resolution')) { screens[id] = true; return; }
+      }
+    }),
+  ]);
+  // the cache keeps the time of its last full read, so every answer in it is at most 10 minutes old
+  await kvs.set('cache:screens', { at: Object.keys(known).length ? cached.at : Date.now(), screens }).catch(() => {});
+  const screenHasResolution = Object.keys(screens).filter((id) => screens[id]);
   if (screenErrors.length) console.warn('screens unreadable', screenErrors.slice(0, 3));
   const teamManagedProjects = new Set(projects.filter((p) => p.style === 'next-gen').map((p) => p.id));
   // a team-managed workflow belongs to its one project, so it is used there (no scheme to look up)
@@ -175,7 +179,7 @@ export async function recordProof(report, by) {
 
 // The scheduled trigger: once a day, prove every workflow again with nobody watching.
 export async function watch() {
-  const report = checkSite(await loadSite({ asApp: true }));
+  const report = checkSite(await loadSite({ asApp: true, fresh: true }));
   const { changes } = await recordProof(report, 'daily watch');
   console.log(`Interlock watch: ${report.results.length} workflows, ${changes.length} changes since the last proof`);
 }
@@ -183,7 +187,7 @@ export async function watch() {
 resolver.define('watchStatus', async () => ({ last: await kvs.get('watch:last'), history: ((await kvs.get('watch:history')) || []).slice(0, 10) }));
 
 resolver.define('checkSite', async (req) => {
-  const site = await loadSite();
+  const site = await loadSite({ fresh: !!req.payload?.fresh });
   // the proof comes back first; live counts follow in a second call (measureSite) so the page paints fast
   const report = checkSite(site, req.payload?.rules || {});
   report.watch = await recordProof(report, req.context.accountId).catch(() => null);

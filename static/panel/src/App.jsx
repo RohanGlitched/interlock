@@ -18,10 +18,13 @@ export default function App() {
   const [rules, setRules] = useState({});
   const [replays, setReplays] = useState({});
   const [measuring, setMeasuring] = useState(false);
+  // once someone picks a workflow the list stops reordering, so counts arriving never move a lever away
+  // from under the pointer; a new check unfreezes it
+  const [frozen, setFrozen] = useState(null);
 
-  const run = () => {
-    setReport(null); setError(null);
-    invoke('checkSite', {}).then((r) => {
+  const run = (fresh = false) => {
+    setReport(null); setError(null); setFrozen(null);
+    invoke('checkSite', { fresh }).then((r) => {
       setReport(r);
       setMeasuring(true);
       invoke('measureSite', {}).then((m) => setReport((cur) => cur && withCounts(cur, m))).catch(() => {}).finally(() => setMeasuring(false));
@@ -30,7 +33,7 @@ export default function App() {
       setSelId((id) => id || worst?.workflow.id);
     }).catch((e) => setError(e.message || String(e)));
   };
-  useEffect(run, []);
+  useEffect(() => run(), []);
 
   // after a fix: prove the whole site again, stay on the same workflow, and say what changed
   const [notice, setNotice] = useState(null);
@@ -58,14 +61,16 @@ export default function App() {
     });
   }, [report, rules]);
 
-  if (error) return <div className="il-empty"><h1>Interlock could not read this site's workflows</h1><p>{error}</p><p>Interlock needs a Jira administrator to open it, because workflows are site configuration.</p><button className="il-btn" onClick={run}>Check again</button></div>;
+  if (error) return <div className="il-empty"><h1>Interlock could not read this site's workflows</h1><p>{error}</p><p>Interlock needs a Jira administrator to open it, because workflows are site configuration.</p><button className="il-btn" onClick={() => run(true)}>Check again</button></div>;
   if (!report) return <Boot />;
 
   const sel = results.find((r) => r.workflow.id === selId) || results[0];
   const model = { ...report.models[sel.workflow.id], teamManaged: sel.teamManaged };
   const totals = summarise(results);
   const liveOf = (r) => Object.values(r.observed || {}).reduce((b, o) => b + o.bad, 0);
-  const list = [...results].filter((r) => filter === 'all' || r.findings.length).sort((a, b) => liveOf(b) - liveOf(a) || b.findings.length - a.findings.length || a.workflow.name.localeCompare(b.workflow.name));
+  const ranked = [...results].sort((a, b) => liveOf(b) - liveOf(a) || b.findings.length - a.findings.length || a.workflow.name.localeCompare(b.workflow.name));
+  const list = (frozen ? [...results].sort((a, b) => (frozen.indexOf(a.workflow.id) + 1 || 1e9) - (frozen.indexOf(b.workflow.id) + 1 || 1e9)) : ranked)
+    .filter((r) => filter === 'all' || r.findings.length);
 
   return (
     <div className="il-app">
@@ -75,7 +80,7 @@ export default function App() {
           Checked {plural(results.length, 'workflow', 'workflows')} and {totals.transitions.toLocaleString()} transitions, every reachable state, in {report.ms} ms.{' '}
           <b>{plural(totals.withFindings, 'workflow has', 'workflows have')} routes that go wrong</b>{totals.live ? <>, and <b className="il-live">{totals.live.toLocaleString()} work items are already in a wrong state</b>.</> : measuring ? '. Counting the work items already affected…' : '.'}
         </p>
-        <button className="il-btn" onClick={run}>Check again</button>
+        <button className="il-btn" onClick={() => run(true)}>Check again</button>
       </header>
       {notice && (
         <div className="il-notice" role="status"><Lamp state="green" />{notice.msg}
@@ -98,7 +103,7 @@ export default function App() {
           <ul>
             {list.map((r) => (
               <li key={r.workflow.id}>
-                <button className={`il-lever ${r.workflow.id === sel.workflow.id ? 'pulled' : ''}`} onClick={() => { setSelId(r.workflow.id); setFocus(null); }}>
+                <button className={`il-lever ${r.workflow.id === sel.workflow.id ? 'pulled' : ''}`} onClick={() => { setSelId(r.workflow.id); setFocus(null); if (!frozen) setFrozen(ranked.map((x) => x.workflow.id)); }}>
                   <span className="handle" aria-hidden="true" />
                   <span className="name">{r.workflow.name}</span>
                   <span className="count">{liveOf(r) ? <span className="live" title="Work items already in a wrong state">{liveOf(r)}</span> : null}{r.findings.length ? <><Lamp state="red" />{r.findings.length}</> : <Lamp state="green" />}</span>

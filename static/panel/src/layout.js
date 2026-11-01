@@ -16,7 +16,11 @@ export function layout(model) {
   if (dist.size <= 1) {
     // a workflow moved only by "from any status" transitions has no order of its own: read it as a line
     // from to-do statuses through in-progress ones to done ones
-    [...model.statuses].sort((a, b) => ORDER[a.category] - ORDER[b.category]).forEach((s, i) => col.set(s.id, i));
+    // from to-do statuses through in-progress ones to done ones, wrapped three to a row so it stays legible
+    const line = [...model.statuses].sort((a, b) => ORDER[a.category] - ORDER[b.category]);
+    const per = line.length > 4 ? 3 : line.length;
+    const pos = new Map(line.map((s, i) => [s.id, { x: LEFT + (i % per) * COL, y: TOP + Math.floor(i / per) * ROW }]));
+    return { pos, width: LEFT * 2 + (per - 1) * COL + BLOCK_W, height: TOP + Math.ceil(line.length / per) * ROW + 60 };
   } else {
     const maxD = Math.max(...dist.values());
     const catCol = { TODO: 0, IN_PROGRESS: Math.max(1, Math.ceil(maxD / 2)), DONE: maxD + 1 };
