@@ -14,6 +14,7 @@ async function devInvoke(fn, payload = {}) {
     return {
       checkedAt: new Date().toISOString(), ms: Math.round(performance.now() - t0), results,
       models: Object.fromEntries(d.workflows.map((w) => [w.id, buildModel(w, statuses)])), projects: [],
+      intended: JSON.parse(localStorage.getItem('il-intended') || '{}'),
     };
   }
   if (fn === 'replay') {
@@ -21,6 +22,13 @@ async function devInvoke(fn, payload = {}) {
     const steps = [{ step: 'Created', status: payload.startName, category: 'new', resolution: null }];
     for (const h of payload.hops) { await new Promise((r) => setTimeout(r, 500)); steps.push({ step: h.transition, status: h.toName, category: 'done', resolution: null }); }
     return { key: 'DESIGN-41', steps };
+  }
+  if (fn === 'markIntended') {
+    const all = JSON.parse(localStorage.getItem('il-intended') || '{}');
+    const k = `${payload.workflowId}|${payload.property}|${payload.subject || ''}`;
+    if (payload.undo) delete all[k]; else all[k] = { by: 'You', at: new Date().toISOString(), reason: payload.reason };
+    localStorage.setItem('il-intended', JSON.stringify(all));
+    return { intended: all };
   }
   if (fn === 'watchStatus') {
     const at = new Date(Date.now() - 3 * 3600e3).toISOString();

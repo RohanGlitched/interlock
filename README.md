@@ -22,7 +22,6 @@ It is for Jira administrators and the teams who rely on Jira's numbers: service 
 
 Each finding comes with the shortest route that breaks the property, from creation, transition by transition.
 
-13 of those 29 are copies of Jira Service Management template workflows; the Change Management copy appears in six projects with the same five findings, and one was confirmed on a real work item: a declined change sent back to Review stays resolved as Declined. A project created from the same template today does not have that route, so these copies come from an earlier version of the template or were edited after they were made. Either way, nothing in Jira tells an admin which workflows still carry such routes; Interlock does. The full list is in [Resolution defects in template-made workflows](docs/atlassian-templates.md).
 
 ## Evidence, in three steps
 
@@ -33,6 +32,8 @@ A proof says what *can* happen. Interlock then takes each finding as far as it c
 3. **Replayed.** One click creates a new work item and walks it down the route through Jira's transitions API, filling in each transition screen the way a person would. It reads back the status and resolution after every step, and once more a few seconds after the last one, so an automation rule that repairs the resolution shows up and the route is reported safe.
 
 Then **fix at the cause**: for resolution findings, Interlock adds *Set resolution* or *Clear resolution* to the transitions involved. Jira validates the change first, and Interlock saves it only when an admin clicks Apply. The whole site is then proved again.
+
+On that demo site (before we added our own Ship and TPL projects), 13 of the 29 workflows with findings are copies of Jira Service Management template workflows; the Change Management copy appears in six projects with the same five findings, and one was confirmed on a real work item: a declined change sent back to Review stays resolved as Declined. A project created from the same template today does not have that route, so these copies come from an earlier version of the template or were edited after they were made. Either way, nothing in Jira tells an admin which workflows still carry such routes; Interlock does. The full list is in [Resolution defects in template-made workflows](docs/atlassian-templates.md).
 
 ## In Jira
 
@@ -47,7 +48,7 @@ On a site with no software project, **Add the Ship demo project** builds a seede
 
 **The daily watch** proves every workflow again once a day and compares each proof with the one before, so a workflow edit that opens a bad route shows up as a new finding with the date it appeared.
 
-**Rovo.** The *Workflow interlock* agent answers questions such as *"Can work in Change Management reach Completed without passing Review?"* with a proof or a counterexample route. The same three tools (`check-workflows`, `get-workflow-findings`, `prove-route`) are published as an MCP server, so a coding agent can prove a workflow before and after changing it. [`skills/interlock/SKILL.md`](skills/interlock/SKILL.md) tells an agent how to use them.
+**Rovo.** The *Workflow interlock* agent answers questions such as *"Can work in Ship reach Done without passing Code Review?"* with a proof or a counterexample route. The same three tools (`check-workflows`, `get-workflow-findings`, `prove-route`) are published as an MCP server, so a coding agent can prove a workflow before and after changing it. [`skills/interlock/SKILL.md`](skills/interlock/SKILL.md) tells an agent how to use them.
 
 ## How it works
 
@@ -83,7 +84,7 @@ Install Interlock from the link on the Devpost page, as a Jira administrator (wo
 3. Select **Replay on a new work item**. Interlock walks a new work item down the route through Jira and reads back the status and resolution after each step. Delete the item afterwards with the button next to it.
 4. On a resolution finding, select **Check the fix with Jira**, then **Apply**. The site is proved again and the lamp turns green. **Undo** puts the workflow back.
 5. Under **Rules for this workflow**, prove a rule such as *work reaches Done only through Code Review*. On a site without a software project, **Add the Ship demo project** first.
-6. In Rovo, ask the *Workflow interlock* agent *"Can work in Change Management reach Completed without passing Review?"*
+6. In Rovo, ask the *Workflow interlock* agent *"Can work in Ship reach Done without passing Code Review?"*
 
 ## Build and deploy
 

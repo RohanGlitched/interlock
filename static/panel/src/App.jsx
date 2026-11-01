@@ -51,15 +51,22 @@ export default function App() {
   };
 
   // re-check the selected workflow in the browser whenever its rules change
+  const [intended, setIntended] = useState({});
+  useEffect(() => { if (report?.intended) setIntended(report.intended); }, [report]);
   const results = useMemo(() => {
     if (!report) return [];
     return report.results.map((r) => {
       const wfRules = rules[r.workflow.id];
-      if (!wfRules?.length) return r;
       const model = { ...report.models[r.workflow.id], teamManaged: r.teamManaged };
-      return { ...r, findings: check(model, { mustPass: wfRules }) };
+      const all = wfRules?.length ? check(model, { mustPass: wfRules }) : r.findings;
+      const isIntended = (f) => intended[`${r.workflow.id}|${f.property}|${f.subject || ''}`];
+      return { ...r, findings: all.filter((f) => !isIntended(f)), intended: all.filter(isIntended).map((f) => ({ ...f, record: isIntended(f) })) };
     });
-  }, [report, rules]);
+  }, [report, rules, intended]);
+  const markIntended = async (r, f, reason, undo = false) => {
+    const out = await invoke('markIntended', { workflowId: r.workflow.id, property: f.property, subject: f.subject, reason, undo });
+    setIntended(out.intended || {});
+  };
 
   // the lever order is set once, when the proof arrives (most findings first); counts that arrive later
   // add their badges without moving anything under the pointer
@@ -121,7 +128,7 @@ export default function App() {
         <main className="il-main">
           <Diagram key={sel.workflow.id} model={model} result={sel} focus={focus} />
         </main>
-        <Table result={sel} model={model} focus={focus} setFocus={setFocus} replays={replays} setReplays={setReplays} onFixed={recheck}
+        <Table result={sel} model={model} focus={focus} setFocus={setFocus} replays={replays} setReplays={setReplays} onFixed={recheck} onIntended={markIntended}
           rules={rules[sel.workflow.id] || []} setRules={(r) => setRules((x) => ({ ...x, [sel.workflow.id]: r }))} />
       </div>
     </div>
@@ -164,6 +171,7 @@ function Diagram({ model, result, focus }) {
   const unreachable = new Set(result.findings.filter((f) => f.property === 'unreachable').map((f) => f.status));
   const route = focus?.route?.hops || [];
   const routeKey = new Set(route.map((h) => `${h.transitionId}:${h.from}`));
+  const onRoute = new Set(route.length ? [model.initial, ...route.flatMap((h) => [h.from, h.to])] : []);
   const trainRef = useRef(null), pathRefs = useRef({});
 
   // run a lit train along the focused route, hop by hop
@@ -223,7 +231,7 @@ function Diagram({ model, result, focus }) {
           const p = pos.get(s.id), state = bad.has(s.id) ? 'red' : unreachable.has(s.id) ? 'amber' : 'green';
           const i = order.get(s.id) ?? 30;
           return (
-            <g key={s.id} className={`il-block ${s.category.toLowerCase()} ${state}`} transform={`translate(${p.x},${p.y})`} style={{ '--t': `${i * 90}ms` }}>
+            <g key={s.id} className={`il-block ${s.category.toLowerCase()} ${state} ${onRoute.has(s.id) ? 'onroute' : ''}`} transform={`translate(${p.x},${p.y})`} style={{ '--t': `${i * 90}ms` }}>
               <rect width={BLOCK_W} height={BLOCK_H} rx="5" />
               <circle className="lamp" cx="16" cy={BLOCK_H / 2} r="6" />
               <StatusLabel name={s.name} />
@@ -259,7 +267,7 @@ function Legend({ teamManaged }) {
 }
 
 // ---------- the interlocking table ----------
-function Table({ result, model, focus, setFocus, replays, setReplays, rules, setRules, onFixed }) {
+function Table({ result, model, focus, setFocus, replays, setReplays, rules, setRules, onFixed, onIntended }) {
   const usage = result.usage.find((u) => u.project);
   async function replay(f) {
     const k = `${result.workflow.id}:${f.id}`;
@@ -327,12 +335,27 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
                   {(f.property === 'doneUnresolved' || f.property === 'openResolved') && (
                     <Fix key={f.id} f={f} result={result} onFixed={onFixed} />
                   )}
+                  {f.property !== 'mustPass' && <Intend key={`i${f.id}`} onSave={(reason) => onIntended(result, f, reason)} />}
                 </div>
               )}
             </li>
           );
         })}
       </ol>
+      {result.intended?.length > 0 && (
+        <section className="il-intended">
+          <h3>Recorded as intended</h3>
+          <ul>
+            {result.intended.map((f) => (
+              <li key={f.id}>
+                <span><b>{f.title}</b>{f.subject ? `, ${f.subject}` : ''}</span>
+                <span className="il-note">{f.record.by}, {new Date(f.record.at).toLocaleDateString()}{f.record.reason ? `: ${f.record.reason}` : ''}</span>
+                <button className="il-link" onClick={() => onIntended(result, f, '', true)}>Undo</button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <Rules model={model} rules={rules} setRules={setRules} />
     </aside>
   );
@@ -368,6 +391,7 @@ function Evidence({ obs, property }) {
   if (obs.bad > 0) {
     return <p className="il-evidence now">Happening now: {obs.bad.toLocaleString()} of {obs.of.toLocaleString()} {obs.bad === 1 ? noun[0] : noun[1]}. <button className="il-link" onClick={() => openPath(link)}>Show them</button></p>;
   }
+  if (!obs.of) return <p className="il-evidence none">No {property === 'doneUnresolved' ? 'done' : 'open'} work items use this workflow yet.</p>;
   return <p className="il-evidence latent">None yet: 0 of {obs.of.toLocaleString()} {property === 'doneUnresolved' ? 'done' : 'open'} work items. Something else may be setting the resolution; replay the route to be sure.</p>;
 }
 
@@ -449,6 +473,20 @@ function verdictOf(f, rp) {
     return { confirmed: ok, text: ok ? ` ${rp.key} is open in ${last.status} but still resolved as ${last.resolution}.` : ' Jira cleared the resolution, so this route is safe.' };
   }
   return { confirmed: true, text: ` ${rp.key} followed the route to ${last.status}.` };
+}
+
+// A route that is there on purpose (a pre-approved standard change, an admin-only shortcut) can be recorded
+// as intended, with a reason, so it stops counting as a problem without being hidden.
+function Intend({ onSave }) {
+  const [open, setOpen] = useState(false), [reason, setReason] = useState(''), [busy, setBusy] = useState(false);
+  if (!open) return <p className="il-intend"><button className="il-link" onClick={() => setOpen(true)}>This route is intended…</button></p>;
+  return (
+    <div className="il-intend">
+      <label>Why is it intended? <input value={reason} maxLength={300} onChange={(e) => setReason(e.target.value)} placeholder="Standard changes are pre-approved by the CAB" /></label>
+      <button className="il-btn" disabled={busy} onClick={async () => { setBusy(true); try { await onSave(reason); } finally { setBusy(false); } }}>Record as intended</button>
+      <button className="il-link" onClick={() => setOpen(false)}>Cancel</button>
+    </div>
+  );
 }
 
 // ---------- rules you can prove ----------

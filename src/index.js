@@ -193,6 +193,22 @@ export async function watch() {
   console.log(`Interlock watch: ${report.results.length} workflows, ${changes.length} changes since the last proof`);
 }
 
+// A finding an admin has looked at and decided is intended (a pre-approved standard-change shortcut, say)
+// is recorded with who, when and why. It stops counting as a problem but stays visible, and can be undone.
+const intendedKey = (workflowId, property, subject) => `${workflowId}|${property}|${subject || ''}`;
+resolver.define('markIntended', async (req) => {
+  const { workflowId, property, subject, reason, undo } = req.payload;
+  const all = (await kvs.get('intended')) || {};
+  const k = intendedKey(workflowId, property, subject);
+  if (undo) delete all[k];
+  else {
+    const me = await jira(route`/rest/api/3/myself`);
+    all[k] = { by: me.displayName, byId: me.accountId, at: new Date().toISOString(), reason: String(reason || '').slice(0, 300) };
+  }
+  await kvs.set('intended', all);
+  return { intended: all };
+});
+
 resolver.define('watchStatus', async () => ({ last: await kvs.get('watch:last'), history: ((await kvs.get('watch:history')) || []).slice(0, 10) }));
 
 resolver.define('checkSite', async (req) => {
@@ -200,6 +216,7 @@ resolver.define('checkSite', async (req) => {
   // the proof comes back first; live counts follow in a second call (measureSite) so the page paints fast
   const report = checkSite(site, req.payload?.rules || {});
   report.watch = await recordProof(report, req.context.accountId).catch(() => null);
+  report.intended = (await kvs.get('intended').catch(() => null)) || {};
   // a compact line per workflow with findings, so a proof can be audited from the app's logs
   console.log('INTERLOCK_REPORT ' + JSON.stringify(report.results.filter((r) => r.findings.length).map((r) => ({
     w: r.workflow.name, p: [...new Set(r.usage.map((u) => u.project))], f: r.findings.map((f) => `${f.property}:${f.subject || ''}`),
