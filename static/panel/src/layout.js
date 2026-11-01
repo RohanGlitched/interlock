@@ -87,7 +87,8 @@ export function tracks(model) {
 
 // A track between two blocks: leaves the right edge, enters the left edge; tracks that run backwards or
 // stay in one column loop under the line so they never cross a block.
-export function trackPath(a, b, lane = 0, vertical = false) {
+// floor: the bottom edge of the lowest block; tracks that run back go round underneath every block, not through them
+export function trackPath(a, b, lane = 0, vertical = false, floor = null) {
   if (vertical) {
     // top to bottom: leave the bottom edge, enter the top edge; tracks that run back loop round the right
     if (b.y > a.y + 4) {
@@ -104,14 +105,17 @@ export function trackPath(a, b, lane = 0, vertical = false) {
     return `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
   }
   const sx = a.x + BLOCK_W / 2 + 18, sy = a.y + BLOCK_H, ex = b.x + BLOCK_W / 2 - 18, ey = b.y + BLOCK_H;
-  const dip = Math.max(sy, ey) + 24 + lane * 9;
-  return `M${sx},${sy} C${sx},${dip} ${ex},${dip} ${ex},${ey}`;
+  // back along its own row (or the row below) dips just under it; further back, it runs in a lane under the lowest row
+  const near = Math.abs(sy - ey) < 4 && Math.abs(a.x - b.x) <= 260;
+  const dip = (near || floor == null ? Math.max(sy, ey) + 24 : floor + 18) + lane * 8;
+  return `M${sx},${sy} C${sx},${dip} ${sx},${dip} ${(sx + ex) / 2},${dip} S${ex},${dip} ${ex},${ey}`;
 }
 
 // A "from any status" transition drops from the overhead rail onto the top of its block.
 export function globalPath(b, k, vertical = false) {
   // top to bottom: the rail runs down the left edge and each drop runs along the gap above its block's row
   if (vertical) { const x = b.x + 22 + (k % 3) * 12, y = b.y - 24 - (k % 2) * 6; return `M16,${y} L${x},${y} L${x},${b.y}`; }
-  const x = b.x + BLOCK_W / 2 + (k % 3) * 14 - 14;
-  return `M${x},34 L${x},${b.y}`;
+  // down the gap left of the block's column, then in from the side: never through a block above it
+  const x = b.x - 16 - (k % 3) * 6, y = b.y + BLOCK_H / 2 + ((k % 2) * 8 - 4);
+  return `M${x},34 L${x},${y} L${b.x},${y}`;
 }

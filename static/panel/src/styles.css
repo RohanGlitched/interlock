@@ -87,7 +87,7 @@ button, select { font: inherit; color: inherit; }
   linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 28px 28px,
   linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 28px 28px, var(--il-panel); }
 .il-diagram-wrap { position: relative; padding: 24px; display: flex; flex-direction: column; }
-.il-diagram-wrap.fit { height: 100%; justify-content: center; overflow: auto; }
+.il-diagram-wrap.fit { height: 100%; justify-content: flex-start; overflow: auto; }
 .il-diagram-wrap.fit .il-diagram { flex: 1 1 auto; min-height: 0; width: 100%; height: auto; }
 .il-diagram-wrap.zoomed .il-diagram { flex: none; max-width: none; }
 .il-zoom { position: sticky; top: 0; align-self: flex-end; z-index: 2; display: inline-flex; gap: 2px; margin-bottom: -28px; }
@@ -325,3 +325,12 @@ button, select { font: inherit; color: inherit; }
 
 .il-lamp.off { background: #4a574e; box-shadow: none; }
 @media (max-width: 1100px) { .il-tiers { flex-wrap: wrap; margin-left: 12px; } }
+
+/* the lit route in words, under the drawing */
+.il-route-strip { margin: 14px 0 0; padding: 8px 12px; border-radius: 4px; background: var(--il-panel-block); color: var(--il-panel-ink); font-size: 13px; line-height: 1.6; }
+.il-route-strip i { font-style: normal; color: #fff6d6; border-bottom: 2px solid var(--il-lit-red); }
+.il-route-strip em { font-style: normal; color: rgba(230, 236, 228, 0.7); }
+/* narrow screens: the evidence is a vertical three-lamp signal head */
+@media (max-width: 1100px) { .il-tiers { flex-direction: column; flex-wrap: nowrap; border-radius: 8px; gap: 4px; padding: 8px 12px; } }
+/* every action in the table reads as a panel button */
+.il-table .il-btn:not(.primary) { border: 1px solid var(--il-panel-block); font-weight: 700; }

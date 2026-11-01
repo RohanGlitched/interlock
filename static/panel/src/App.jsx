@@ -378,6 +378,7 @@ function Diagram({ model, result, focus }) {
   // status names at about 11 px on screen or more, whatever the scale (wrapped to fit their block)
   const statusSize = Math.min(17, Math.max(13, 11 / (fitScale * zoom)));
   const globals = model.transitions.filter((t) => t.type === 'GLOBAL');
+  const floorY = Math.max(...[...pos.values()].map((p) => p.y)) + BLOCK_H;
   return (
     <div ref={wrapRef} className={`il-diagram-wrap ${zoom > 1 ? 'zoomed' : 'fit'} ${vertical ? 'vertical' : ''}`}>
       <div className="il-zoom" role="group" aria-label="Zoom the track diagram">
@@ -404,7 +405,7 @@ function Diagram({ model, result, focus }) {
           const ids = tr.transitions.map((t) => `${t.id}:${tr.from}`);
           const on = ids.some((id) => routeKey.has(id));
           return (
-            <path key={`${tr.from}>${tr.to}`} id={on ? `il-lit-t${k}` : undefined} d={trackPath(a, b, k % 4, vertical)} className={`il-track ${(vertical ? b.y <= a.y : b.x <= a.x) ? 'back' : ''} ${on ? 'route' : ''}`}
+            <path key={`${tr.from}>${tr.to}`} id={on ? `il-lit-t${k}` : undefined} d={trackPath(a, b, k % 4, vertical, floorY)} className={`il-track ${(vertical ? b.y <= a.y : b.x <= a.x) ? 'back' : ''} ${on ? 'route' : ''}`}
               ref={(el) => { if (el) for (const id of ids) pathRefs.current[id] = el; }}>
               <title>{tr.transitions.map((t) => t.name).join(', ')}</title>
             </path>
@@ -439,6 +440,12 @@ function Diagram({ model, result, focus }) {
           );
         })}
       </svg>
+      {route.length > 0 && (
+        <p className="il-route-strip" aria-label="The lit route">
+          <b>{focus?.route?.startName}</b>{route.map((h, i) => <span key={i}> <i>{h.transition}</i> → <b>{h.toName}</b></span>)}
+          {focus?.title ? <em> · {focus.title.toLowerCase()}</em> : null}
+        </p>
+      )}
       <Legend teamManaged={result.teamManaged} focused={!!focusSet} />
     </div>
   );
