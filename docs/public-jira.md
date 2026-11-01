@@ -45,17 +45,17 @@ This is the pattern Interlock proves from configuration: a transition into a don
 
 **Apache, open but still resolved (1,239 items).** This side is mostly not routes: 1,100 of the last steps have no author (BEAM's 637 "Resolved → Triage Needed" and Lucene's 379 are system changes after both projects moved to GitHub Issues in 2022), and 29 items have no status change. The rest were people, and the clearest route among them is the classic one: **a reopen from Closed that keeps the old resolution**, 25 times in GEODE ([GEODE-9489](https://issues.apache.org/jira/browse/GEODE-9489)) and 14 in IGNITE ([IGNITE-7537](https://issues.apache.org/jira/browse/IGNITE-7537)), by 31 different people.
 
-**Not every count is a route.** Two clusters on the other sites turned out to be one-off operations, and we say so rather than count them as evidence:
+**Not every count is a route.** Two clusters turned out to be one-off operations, and we say so rather than count them as evidence:
 
 - **Sourcetree (1,065):** every item was closed by one person on one day (September 19, 2019) through Resolved → Closed, after the project moved to another workflow. It is a single bulk close through a transition that does not set a resolution: the same defect, but one event.
 - **Lucene (380, open but still resolved):** 379 of the last steps have no author; 367 happened in 2024, after Lucene moved to GitHub Issues in 2022. These are system changes, not people using the workflow.
 
-These counts were read on Nov 2, 2026 with `prover/tools/public-trace.mjs` (below) and change as the sites change.
+The totals were counted on Nov 1, 2026 and the histories read on Nov 2, 2026 with `prover/tools/public-trace.mjs` (below) and change as the sites change.
 
 ## Limits
 
 - Interlock's proof needs a site administrator, because it reads workflow configuration. We are not administrators of these sites, so this page shows the symptoms Interlock counts and the routes visible in public history, not a proof over their workflows.
-- Some counts have other causes than a workflow route: imports (Apache's 1,080 with no status change), bulk operations (Sourcetree) and migrations (Lucene and BEAM moved to GitHub Issues in 2022). The section above separates the ones we could check; we did not trace the open-but-resolved side beyond Lucene.
+- Some counts have other causes than a workflow route: imports (Apache's 1,080 with no status change), bulk operations (Sourcetree) and migrations (Lucene and BEAM moved to GitHub Issues in 2022). The sections above separate the ones we could check, on both sides (done but unresolved, and open but still resolved).
 - The counts change daily; to rerun them, see below.
 
 ## Reproduce it
