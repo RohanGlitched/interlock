@@ -403,11 +403,26 @@ function Tiers({ f, obs, verdict }) {
 // What Jira's own data says: how many work items in the projects using this workflow are already in
 // the state the proof says is reachable.
 function Evidence({ obs, property }) {
+  const [trace, setTrace] = useState(null);
   if (!obs) return null;
   const noun = property === 'doneUnresolved' ? ['done work item is unresolved', 'done work items are unresolved'] : ['open work item still has a resolution', 'open work items still have a resolution'];
   const link = `/issues/?jql=${encodeURIComponent(obs.jql)}`;
   if (obs.bad > 0) {
-    return <p className="il-evidence now">Happening now: {obs.bad.toLocaleString()} of {obs.of.toLocaleString()} {obs.bad === 1 ? noun[0] : noun[1]}. <button className="il-link" onClick={() => openPath(link)}>Show them</button></p>;
+    return (
+      <div className="il-evidence now">
+        <p>Happening now: {obs.bad.toLocaleString()} of {obs.of.toLocaleString()} {obs.bad === 1 ? noun[0] : noun[1]}. <button className="il-link" onClick={() => openPath(link)}>Show them</button>
+          {' '}{!trace && <button className="il-link" onClick={async () => { setTrace('loading'); try { setTrace(await invoke('traceItems', { jql: obs.jql })); } catch (e) { setTrace({ error: e.message }); } }}>How did they get there?</button>}</p>
+        {trace === 'loading' && <p className="il-trace">Reading their history…</p>}
+        {trace?.error && <p className="il-trace">{trace.error}</p>}
+        {trace?.ways && (
+          <ul className="il-trace">
+            {trace.ways.map((w) => (
+              <li key={`${w.from}${w.to}${w.effect}`}><b>{w.count} of {trace.read}</b> came {w.from} → {w.to}, {w.effect} <button className="il-link" onClick={() => openIssue(w.example)}>{w.example}</button></li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
   }
   if (!obs.of) return <p className="il-evidence none">No {property === 'doneUnresolved' ? 'done' : 'open'} work items use this workflow yet.</p>;
   return <p className="il-evidence latent">None yet: 0 of {obs.of.toLocaleString()} {property === 'doneUnresolved' ? 'done' : 'open'} work items. Something else may be setting the resolution; replay the route to be sure.</p>;

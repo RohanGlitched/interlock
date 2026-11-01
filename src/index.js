@@ -197,6 +197,34 @@ export async function watch() {
 // A finding an admin has looked at and decided is intended (a pre-approved standard-change shortcut, say)
 // is recorded with who, when and why. It stops counting as a problem but stays visible, and can be undone.
 const intendedKey = (workflowId, property, subject) => `${workflowId}|${property}|${subject || ''}`;
+// How did the work items already in a bad state get there? Read the history of up to 50 of them and
+// count the status changes that brought each one into its current state, with what happened to the
+// resolution on the way. This ties Jira's data back to the route the proof found.
+resolver.define('traceItems', async (req) => {
+  const { jql } = req.payload;
+  const res = await jira(route`/rest/api/3/search/jql`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jql, maxResults: 50, fields: ['status', 'resolution'], expand: 'changelog' }),
+  });
+  const ways = new Map();
+  let read = 0;
+  for (const issue of res.issues || []) {
+    const histories = issue.changelog?.histories || [];
+    // the last status change is the step that put the item where it is now
+    const last = [...histories].reverse().find((h) => h.items.some((i) => i.field === 'status'));
+    if (!last) continue;
+    read++;
+    const st = last.items.find((i) => i.field === 'status');
+    const resItem = last.items.find((i) => i.field === 'resolution');
+    const effect = resItem ? (resItem.toString ? `resolution set to ${resItem.toString}` : 'resolution cleared') : 'resolution left as it was';
+    const k = `${st.fromString}→${st.toString}|${effect}`;
+    const w = ways.get(k) || { from: st.fromString, to: st.toString, effect, count: 0, example: issue.key };
+    w.count++;
+    ways.set(k, w);
+  }
+  return { read, ways: [...ways.values()].sort((a, b) => b.count - a.count).slice(0, 5) };
+});
+
 resolver.define('saveRules', async (req) => {
   const all = (await kvs.get('rules')) || {};
   const { workflowId, rules } = req.payload;
