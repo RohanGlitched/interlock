@@ -299,7 +299,7 @@ button, select { font: inherit; color: inherit; }
 .il-confirm p { margin: 0 0 8px; }
 
 /* the evidence as a three-aspect signal head on a dark housing */
-.il-tiers { background: var(--il-panel-block); color: rgba(230, 236, 228, 0.7); border-radius: 16px; padding: 6px 12px; display: inline-flex; gap: 4px 14px; margin: -2px 12px 10px 33px; }
+.il-tiers { background: var(--il-panel-block); color: rgba(230, 236, 228, 0.7); border-radius: 16px; padding: 6px 12px; display: inline-flex; flex-wrap: nowrap; gap: 10px; margin: -2px 12px 10px 33px; font-size: 11.5px; }
 .il-tiers li.on { color: #fff6d6; }
 .il-tiers li.na { color: rgba(230, 236, 228, 0.45); }
 .il-tiers .il-lamp.aspect { width: 13px; height: 13px; background: #2d3831; box-shadow: inset 0 0 0 1.5px #4a574e; }
@@ -308,3 +308,6 @@ button, select { font: inherit; color: inherit; }
 .il-tiers .il-lamp.aspect.red { background: radial-gradient(circle at 35% 35%, #ffb0a6, var(--il-lit-red) 60%); box-shadow: 0 0 8px rgba(255, 85, 68, 0.75); }
 .il-tiers li.na .il-lamp.aspect { background: transparent; box-shadow: none; border: 1.5px dashed #56625b; }
 .il-table h2 .il-tag { font-style: normal; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 2px; background: rgba(29, 38, 32, 0.1); vertical-align: 2px; }
+
+/* the lit route over the blocks: a dark halo under the red, never hidden by a status */
+.il-route-top use { pointer-events: none; }

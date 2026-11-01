@@ -86,7 +86,8 @@ export default function App() {
     const stage = `${report.checkedAt}|${results.some((r) => r.observed)}`;
     if (autoStage === stage) return;
     setAutoStage(stage);
-    const pick = [...results].sort((a, b) => rankScore(b) - rankScore(a) || b.findings.length - a.findings.length || a.workflow.name.localeCompare(b.workflow.name))[0];
+    const ship = results.find((r) => r.workflow.name === 'Ship: Software delivery workflow' && r.findings.length);
+    const pick = ship || [...results].sort((a, b) => rankScore(b) - rankScore(a) || b.findings.length - a.findings.length || a.workflow.name.localeCompare(b.workflow.name))[0];
     if (!pick?.findings.length) return;
     setSelId(pick.workflow.id);
     setFocus(worstFinding(pick));
@@ -292,7 +293,7 @@ function Diagram({ model, result, focus }) {
     const h = layout(model), v = layout(model, true);
     if (!frame || frame.w < 50 || frame.h < 50) return h;
     const fit = (l) => Math.min(frame.w / l.width, (frame.h - 60) / l.height);
-    return fit(v) > fit(h) * 1.15 || (fit(h) < 0.8 && fit(v) > fit(h)) ? v : h;
+    return fit(v) > fit(h) * 1.15 ? v : h;
   }, [model, frame]);
   // the scale the diagram has when it fits the frame; zoom multiplies it
   const fitScale = frame ? Math.max(0.55, Math.min(1.7, frame.w / width, (frame.h - 60) / height)) : 0.8;
@@ -370,14 +371,14 @@ function Diagram({ model, result, focus }) {
         {globals.map((t, k) => {
           const b = pos.get(t.to); if (!b) return null;
           const d = globalPath(b, k, vertical), on = routeKey.has(`${t.id}:${route.find((h) => h.transitionId === t.id)?.from}`);
-          return <path key={t.id} ref={(el) => { if (el) pathRefs.current[`${t.id}:*`] = el; }} d={d} className={`il-track global ${on ? 'route' : ''}`} />;
+          return <path key={t.id} id={on ? `il-lit-g${t.id}` : undefined} ref={(el) => { if (el) pathRefs.current[`${t.id}:*`] = el; }} d={d} className={`il-track global ${on ? 'route' : ''}`} />;
         })}
         {tracks(model).map((tr, k) => {
           const a = pos.get(tr.from), b = pos.get(tr.to); if (!a || !b) return null;
           const ids = tr.transitions.map((t) => `${t.id}:${tr.from}`);
           const on = ids.some((id) => routeKey.has(id));
           return (
-            <path key={`${tr.from}>${tr.to}`} d={trackPath(a, b, k % 4, vertical)} className={`il-track ${(vertical ? b.y <= a.y : b.x <= a.x) ? 'back' : ''} ${on ? 'route' : ''}`}
+            <path key={`${tr.from}>${tr.to}`} id={on ? `il-lit-t${k}` : undefined} d={trackPath(a, b, k % 4, vertical)} className={`il-track ${(vertical ? b.y <= a.y : b.x <= a.x) ? 'back' : ''} ${on ? 'route' : ''}`}
               ref={(el) => { if (el) for (const id of ids) pathRefs.current[id] = el; }}>
               <title>{tr.transitions.map((t) => t.name).join(', ')}</title>
             </path>
@@ -404,6 +405,12 @@ function Diagram({ model, result, focus }) {
             </g>
           );
         })}
+        {route.length > 0 && (
+          <g className="il-route-top" aria-hidden="true">
+            {globals.filter((t) => routeKey.has(`${t.id}:${route.find((h) => h.transitionId === t.id)?.from}`)).map((t) => <use key={`g${t.id}`} href={`#il-lit-g${t.id}`} />)}
+            {tracks(model).map((tr, k) => (tr.transitions.some((t) => routeKey.has(`${t.id}:${tr.from}`)) ? <use key={`t${k}`} href={`#il-lit-t${k}`} /> : null))}
+          </g>
+        )}
         {route.length > 0 && !reduceMotion && <g ref={trainRef} className="il-train"><circle r="9" /><circle r="4" className="core" /></g>}
       </svg>
       <Legend teamManaged={result.teamManaged} />
