@@ -52,13 +52,15 @@ export async function loadSite() {
   // Transition screens that collect the Resolution field set it on the way through.
   const screenIds = [...new Set(workflows.flatMap((w) => w.transitions.map((t) => t.transitionScreen?.parameters?.screenId).filter(Boolean)))];
   const screenHasResolution = [];
+  const screenErrors = [];
   await pool(screenIds, 6, async (id) => {
-    const tabs = await jira(route`/rest/api/3/screens/${id}/tabs`).catch(() => []);
+    const tabs = await jira(route`/rest/api/3/screens/${id}/tabs`).catch((e) => { screenErrors.push(`${id}: ${e.message}`); return []; });
     for (const tab of tabs) {
-      const fields = await jira(route`/rest/api/3/screens/${id}/tabs/${tab.id}/fields`).catch(() => []);
+      const fields = await jira(route`/rest/api/3/screens/${id}/tabs/${tab.id}/fields`).catch((e) => { screenErrors.push(`${id}/${tab.id}: ${e.message}`); return []; });
       if (fields.some((f) => f.id === 'resolution')) { screenHasResolution.push(String(id)); return; }
     }
   });
+  if (screenErrors.length) console.warn('screens unreadable', screenErrors.slice(0, 3));
   const teamManagedProjects = new Set(projects.filter((p) => p.style === 'next-gen').map((p) => p.id));
   return { workflows, statuses, projects, usage, screenHasResolution, teamManagedProjects: [...teamManagedProjects] };
 }
@@ -77,9 +79,40 @@ export function checkSite(site, rules = {}) {
 
 const resolver = new Resolver();
 
+// A proof says what can happen; Jira's own data says whether it already has. For each resolution
+// finding, count the work items in the projects using that workflow that are in the bad state today.
+export async function measure(site, report) {
+  const count = async (jql) => (await jira(route`/rest/api/3/search/approximate-count`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jql }),
+  })).count;
+  const jobs = [];
+  for (const r of report.results) {
+    const kinds = new Set(r.findings.map((f) => f.property).filter((p) => p === 'doneUnresolved' || p === 'openResolved'));
+    if (!kinds.size || !r.usage.length) continue;
+    const projects = [...new Set(r.usage.map((u) => u.project))];
+    const explicit = r.usage.filter((u) => u.issueType);
+    const scope = `project in (${projects.map((p) => `"${p}"`).join(',')})` + (explicit.length && explicit.length === r.usage.length ? ` AND issuetype in (${[...new Set(explicit.map((u) => u.issueType))].join(',')})` : '');
+    jobs.push({ r, kinds, scope });
+  }
+  await pool(jobs, 6, async ({ r, kinds, scope }) => {
+    try {
+      r.observed = {};
+      if (kinds.has('doneUnresolved')) {
+        const [bad, done] = await Promise.all([count(`${scope} AND statusCategory = Done AND resolution IS EMPTY`), count(`${scope} AND statusCategory = Done`)]);
+        r.observed.doneUnresolved = { bad, of: done, jql: `${scope} AND statusCategory = Done AND resolution IS EMPTY` };
+      }
+      if (kinds.has('openResolved')) {
+        const [bad, open] = await Promise.all([count(`${scope} AND statusCategory != Done AND resolution IS NOT EMPTY`), count(`${scope} AND statusCategory != Done`)]);
+        r.observed.openResolved = { bad, of: open, jql: `${scope} AND statusCategory != Done AND resolution IS NOT EMPTY` };
+      }
+    } catch (e) { r.observedError = e.message; }
+  });
+  return report;
+}
+
 resolver.define('checkSite', async (req) => {
   const site = await loadSite();
-  const report = checkSite(site, req.payload?.rules || {});
+  const report = await measure(site, checkSite(site, req.payload?.rules || {}));
   // the UI draws each workflow, so it gets the models too (statuses and transitions only)
   const statuses = new Map(Object.entries(site.statuses));
   report.models = Object.fromEntries(site.workflows.map((w) => [w.id, buildModel(w, statuses, { screenHasResolution: new Set(site.screenHasResolution) })]));
@@ -120,3 +153,54 @@ resolver.define('replay', async (req) => {
 });
 
 export const handler = resolver.getDefinitions();
+
+// ---------- tools for agents (Rovo actions, exposed over MCP) ----------
+
+const findWorkflow = (site, name) => {
+  const q = String(name || '').trim().toLowerCase();
+  return site.workflows.find((w) => w.name.toLowerCase() === q) || site.workflows.find((w) => w.name.toLowerCase().includes(q));
+};
+
+const brief = (f) => ({
+  problem: f.title, status: f.subject,
+  route: f.route ? [f.route.startName, ...f.route.hops.map((h) => `${h.transition}${h.global ? ' (from any status)' : ''} -> ${h.toName}`)].join(' | ') : undefined,
+});
+
+export async function checkWorkflows(payload) {
+  const site = await loadSite();
+  const report = checkSite(site);
+  const project = payload?.projectKey && String(payload.projectKey).toUpperCase();
+  const projectId = project && site.projects.find((p) => p.key === project)?.id;
+  const results = report.results.filter((r) => !project || r.usage.some((u) => u.project === project) || r.scope?.project?.id === projectId);
+  return {
+    checked: results.length, msToCheck: report.ms,
+    workflowsWithFindings: results.filter((r) => r.findings.length).map((r) => ({
+      workflow: r.workflow.name, usedIn: [...new Set(r.usage.map((u) => u.project))],
+      findings: r.findings.map(brief),
+    })),
+  };
+}
+
+export async function getWorkflowFindings(payload) {
+  const site = await loadSite();
+  const w = findWorkflow(site, payload?.workflow);
+  if (!w) return { error: `No workflow matches "${payload?.workflow}".` };
+  const r = checkSite({ ...site, workflows: [w] }).results[0];
+  return { workflow: w.name, statuses: r.statuses, transitions: r.transitions, reachableStates: r.states, propertiesThatHold: r.held, findings: r.findings.map((f) => ({ ...brief(f), why: f.why })) };
+}
+
+// "Can work reach <target> without passing <through>?" answered for every route, not a sample.
+export async function proveRoute(payload) {
+  const site = await loadSite();
+  const w = findWorkflow(site, payload?.workflow);
+  if (!w) return { error: `No workflow matches "${payload?.workflow}".` };
+  const statuses = new Map(Object.entries(site.statuses));
+  const byName = (n) => w.statuses.map((s) => s.statusReference).find((id) => statuses.get(id)?.name.toLowerCase() === String(n || '').trim().toLowerCase());
+  const target = byName(payload.target), via = byName(payload.through);
+  if (!target || !via) return { error: `Use status names from this workflow: ${w.statuses.map((s) => statuses.get(s.statusReference)?.name).join(', ')}.` };
+  const r = checkSite({ ...site, workflows: [w] }, { [w.id]: [{ target, via }] }).results[0];
+  const f = r.findings.find((x) => x.property === 'mustPass');
+  return f
+    ? { holds: false, answer: `No. Work can reach ${payload.target} without passing ${payload.through}.`, counterexample: brief(f).route }
+    : { holds: true, answer: `Yes. Every route that reaches ${payload.target} passes ${payload.through}; Interlock checked all ${r.states} reachable states.` };
+}

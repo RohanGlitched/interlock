@@ -27,6 +27,12 @@ async function devInvoke(fn, payload = {}) {
 
 export const invoke = DEV ? devInvoke : async (fn, payload) => (await forgeP).invoke(fn, payload);
 export async function enableTheme() { if (!DEV) await (await forgeP).view.theme.enable(); }
+export async function openPath(path) {
+  if (DEV) { window.open(path, '_blank'); return; }
+  const { router } = await forgeP;
+  router.open(path);
+}
+
 export async function openIssue(key) {
   if (DEV) return;
   const { router } = await forgeP;

@@ -6,15 +6,89 @@ modules:
         function: resolver
       title: Interlock
       icon: resource:main;interlock-icon.svg
+  # The same checker, as tools for agents: Rovo, and any MCP client (Claude Code, Cursor, Codex) through
+  # the Atlassian MCP server once an admin enables Interlock for external clients.
+  rovo:mcp:
+    - key: interlock-mcp
+      name: Interlock
+      tools:
+        - check-workflows
+        - get-workflow-findings
+        - prove-route
+  rovo:agent:
+    - key: interlock-agent
+      name: Workflow interlock
+      description: Proves whether Jira workflows can strand work, finish it without a resolution, or skip a required review, with the exact route as evidence.
+      icon: resource:main;interlock-icon.svg
+      prompt: resource:main;prompts/agent.txt
+      conversationStarters:
+        - Which workflows can finish work without a resolution?
+        - Can work in the Change Management workflow reach Completed without passing Review?
+        - What is wrong with the Web design process task workflow?
+      actions:
+        - check-workflows
+        - get-workflow-findings
+        - prove-route
+  action:
+    - key: check-workflows
+      name: Check workflows
+      function: checkWorkflows
+      actionVerb: GET
+      description: Model-checks every Jira workflow on the site, or one project's, and lists workflows whose routes strand work or leave the resolution wrong.
+      inputs:
+        projectKey:
+          title: Project key
+          type: string
+          required: false
+          description: Only check workflows used by this project, for example ENG.
+    - key: get-workflow-findings
+      name: Get workflow findings
+      function: getWorkflowFindings
+      actionVerb: GET
+      description: Model-checks one Jira workflow by name and returns which properties hold and every finding with the shortest route that breaks it.
+      inputs:
+        workflow:
+          title: Workflow name
+          type: string
+          required: true
+          description: The workflow name or part of it, for example Web design process task workflow.
+    - key: prove-route
+      name: Prove a route rule
+      function: proveRoute
+      actionVerb: GET
+      description: Proves or refutes that every route to one status passes through another, over all reachable states, with a counterexample route if not.
+      inputs:
+        workflow:
+          title: Workflow name
+          type: string
+          required: true
+          description: The workflow name or part of it.
+        target:
+          title: Target status
+          type: string
+          required: true
+          description: The status work must not reach early, for example Done.
+        through:
+          title: Required status
+          type: string
+          required: true
+          description: The status every route must pass first, for example Review.
   function:
     - key: resolver
       handler: index.handler
+    - key: checkWorkflows
+      handler: index.checkWorkflows
+    - key: getWorkflowFindings
+      handler: index.getWorkflowFindings
+    - key: proveRoute
+      handler: index.proveRoute
 resources:
   - key: main
     path: static/panel/dist
 permissions:
   scopes:
     - manage:jira-configuration
+    - manage:jira-project
     - read:jira-work
     - write:jira-work
 app:

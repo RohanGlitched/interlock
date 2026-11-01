@@ -2,7 +2,7 @@
 // workflows, the track diagram shows one of them, and the interlocking table lists what can go wrong,
 // each with the exact route, which can be replayed on a real work item to prove it.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { invoke, openIssue } from './bridge.js';
+import { invoke, openIssue, openPath } from './bridge.js';
 import { check, explore, PROPERTIES } from '../../../engine/interlock.mjs';
 import { layout, trackPath, globalPath, BLOCK_W, BLOCK_H } from './layout.js';
 
@@ -22,7 +22,8 @@ export default function App() {
     setReport(null); setError(null);
     invoke('checkSite', {}).then((r) => {
       setReport(r);
-      const worst = [...r.results].sort((a, b) => b.findings.length - a.findings.length)[0];
+      const live = (x) => Object.values(x.observed || {}).reduce((b, o) => b + o.bad, 0);
+      const worst = [...r.results].sort((a, b) => live(b) - live(a) || b.findings.length - a.findings.length)[0];
       setSelId((id) => id || worst?.workflow.id);
     }).catch((e) => setError(e.message || String(e)));
   };
@@ -45,7 +46,8 @@ export default function App() {
   const sel = results.find((r) => r.workflow.id === selId) || results[0];
   const model = { ...report.models[sel.workflow.id], teamManaged: sel.teamManaged };
   const totals = summarise(results);
-  const list = [...results].filter((r) => filter === 'all' || r.findings.length).sort((a, b) => b.findings.length - a.findings.length || a.workflow.name.localeCompare(b.workflow.name));
+  const liveOf = (r) => Object.values(r.observed || {}).reduce((b, o) => b + o.bad, 0);
+  const list = [...results].filter((r) => filter === 'all' || r.findings.length).sort((a, b) => liveOf(b) - liveOf(a) || b.findings.length - a.findings.length || a.workflow.name.localeCompare(b.workflow.name));
 
   return (
     <div className="il-app">
@@ -53,7 +55,7 @@ export default function App() {
         <div className="il-brand"><Lamp state="green" /><h1>Interlock</h1></div>
         <p className="il-summary">
           Checked {plural(results.length, 'workflow', 'workflows')} and {totals.transitions.toLocaleString()} transitions, every reachable state, in {report.ms} ms.{' '}
-          <b>{plural(totals.withFindings, 'workflow has', 'workflows have')} routes that go wrong.</b>
+          <b>{plural(totals.withFindings, 'workflow has', 'workflows have')} routes that go wrong</b>{totals.live ? <>, and <b className="il-live">{totals.live.toLocaleString()} work items are already in a wrong state</b>.</> : '.'}
         </p>
         <button className="il-btn" onClick={run}>Check again</button>
       </header>
@@ -69,7 +71,7 @@ export default function App() {
                 <button className={`il-lever ${r.workflow.id === sel.workflow.id ? 'pulled' : ''}`} onClick={() => { setSelId(r.workflow.id); setFocus(null); }}>
                   <span className="handle" aria-hidden="true" />
                   <span className="name">{r.workflow.name}</span>
-                  <span className="count">{r.findings.length ? <><Lamp state="red" />{r.findings.length}</> : <Lamp state="green" />}</span>
+                  <span className="count">{liveOf(r) ? <span className="live" title="Work items already in a wrong state">{liveOf(r)}</span> : null}{r.findings.length ? <><Lamp state="red" />{r.findings.length}</> : <Lamp state="green" />}</span>
                 </button>
               </li>
             ))}
@@ -86,7 +88,9 @@ export default function App() {
 }
 
 function summarise(results) {
+  const live = results.reduce((a, r) => a + Object.values(r.observed || {}).reduce((b, o) => b + o.bad, 0), 0);
   return {
+    live,
     transitions: results.reduce((a, r) => a + r.transitions, 0),
     withFindings: results.filter((r) => r.findings.length).length,
   };
@@ -219,6 +223,7 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
                 <Lamp state={property === 'unreachable' ? 'amber' : 'red'} />
                 <span><b>{f.title}</b>{list.length === 1 ? f.subject : `${list.length} statuses`}</span>
               </button>
+              <Evidence obs={result.observed?.[property]} property={property} />
               {list.length > 1 && (
                 <div className="il-chips" role="group" aria-label={f.title}>
                   {list.map((x) => <button key={x.id} className={focus?.id === x.id ? 'on' : ''} onClick={() => setFocus(focus?.id === x.id ? null : x)}>{x.subject}</button>)}
@@ -257,6 +262,18 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
       <Rules model={model} rules={rules} setRules={setRules} />
     </aside>
   );
+}
+
+// What Jira's own data says: how many work items in the projects using this workflow are already in
+// the state the proof says is reachable.
+function Evidence({ obs, property }) {
+  if (!obs) return null;
+  const noun = property === 'doneUnresolved' ? ['done work item is unresolved', 'done work items are unresolved'] : ['open work item still has a resolution', 'open work items still have a resolution'];
+  const link = `/issues/?jql=${encodeURIComponent(obs.jql)}`;
+  if (obs.bad > 0) {
+    return <p className="il-evidence now">Happening now: {obs.bad.toLocaleString()} of {obs.of.toLocaleString()} {obs.bad === 1 ? noun[0] : noun[1]}. <button className="il-link" onClick={() => openPath(link)}>Show them</button></p>;
+  }
+  return <p className="il-evidence latent">None yet: 0 of {obs.of.toLocaleString()} {property === 'doneUnresolved' ? 'done' : 'open'} work items. Something else may be setting the resolution; replay the route to be sure.</p>;
 }
 
 // One row per property, worst first; each affected status becomes a chip with its own route.
