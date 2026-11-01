@@ -17,11 +17,14 @@ export default function App() {
   const [focus, setFocus] = useState(null);
   const [rules, setRules] = useState({});
   const [replays, setReplays] = useState({});
+  const [measuring, setMeasuring] = useState(false);
 
   const run = () => {
     setReport(null); setError(null);
     invoke('checkSite', {}).then((r) => {
       setReport(r);
+      setMeasuring(true);
+      invoke('measureSite', {}).then((m) => setReport((cur) => cur && withCounts(cur, m))).catch(() => {}).finally(() => setMeasuring(false));
       const live = (x) => Object.values(x.observed || {}).reduce((b, o) => b + o.bad, 0);
       const worst = [...r.results].sort((a, b) => live(b) - live(a) || b.findings.length - a.findings.length)[0];
       setSelId((id) => id || worst?.workflow.id);
@@ -40,6 +43,8 @@ export default function App() {
   const recheck = async (msg) => {
     const r = await invoke('checkSite', {});
     setReport(r); setFocus(null); setNotice(msg);
+    setMeasuring(true);
+    invoke('measureSite', {}).then((m) => setReport((cur) => cur && withCounts(cur, m))).catch(() => {}).finally(() => setMeasuring(false));
   };
 
   // re-check the selected workflow in the browser whenever its rules change
@@ -68,7 +73,7 @@ export default function App() {
         <div className="il-brand"><Lamp state="green" /><h1>Interlock</h1></div>
         <p className="il-summary">
           Checked {plural(results.length, 'workflow', 'workflows')} and {totals.transitions.toLocaleString()} transitions, every reachable state, in {report.ms} ms.{' '}
-          <b>{plural(totals.withFindings, 'workflow has', 'workflows have')} routes that go wrong</b>{totals.live ? <>, and <b className="il-live">{totals.live.toLocaleString()} work items are already in a wrong state</b>.</> : '.'}
+          <b>{plural(totals.withFindings, 'workflow has', 'workflows have')} routes that go wrong</b>{totals.live ? <>, and <b className="il-live">{totals.live.toLocaleString()} work items are already in a wrong state</b>.</> : measuring ? '. Counting the work items already affected…' : '.'}
         </p>
         <button className="il-btn" onClick={run}>Check again</button>
       </header>
@@ -100,6 +105,10 @@ export default function App() {
       </div>
     </div>
   );
+}
+
+function withCounts(report, counts) {
+  return { ...report, results: report.results.map((r) => (counts[r.workflow.id] ? { ...r, ...counts[r.workflow.id] } : r)) };
 }
 
 function summarise(results) {
@@ -167,7 +176,7 @@ function Diagram({ model, result, focus }) {
   const globals = model.transitions.filter((t) => t.type === 'GLOBAL');
   return (
     <div className="il-diagram-wrap">
-      <svg className="il-diagram" viewBox={`0 0 ${width} ${height}`} style={{ maxWidth: width, minWidth: Math.min(width, 640) }} role="img" aria-label={`Track diagram of ${result.workflow.name}`}>
+      <svg className="il-diagram" viewBox={`0 0 ${width} ${height}`} style={{ maxWidth: width, minWidth: Math.min(width, 380) }} role="img" aria-label={`Track diagram of ${result.workflow.name}`}>
         <defs>
           <filter id="il-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.4" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
         </defs>

@@ -112,12 +112,20 @@ export async function measure(site, report) {
 
 resolver.define('checkSite', async (req) => {
   const site = await loadSite();
-  const report = await measure(site, checkSite(site, req.payload?.rules || {}));
+  // the proof comes back first; live counts follow in a second call (measureSite) so the page paints fast
+  const report = checkSite(site, req.payload?.rules || {});
   // the UI draws each workflow, so it gets the models too (statuses and transitions only)
   const statuses = new Map(Object.entries(site.statuses));
   report.models = Object.fromEntries(site.workflows.map((w) => [w.id, buildModel(w, statuses, { screenHasResolution: new Set(site.screenHasResolution) })]));
   report.projects = site.projects;
   return report;
+});
+
+// Count the work items already in each bad state, for the workflows that have resolution findings.
+resolver.define('measureSite', async (req) => {
+  const site = await loadSite();
+  const report = await measure(site, checkSite(site));
+  return Object.fromEntries(report.results.filter((r) => r.observed || r.observedError).map((r) => [r.workflow.id, { observed: r.observed, observedError: r.observedError }]));
 });
 
 // Replay a finding's route on a new work item: create it where the workflow is used, run each
