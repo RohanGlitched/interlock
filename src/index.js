@@ -211,7 +211,9 @@ resolver.define('traceItems', async (req) => {
   for (const issue of res.issues || []) {
     const histories = issue.changelog?.histories || [];
     // the last status change is the step that put the item where it is now
-    const last = [...histories].reverse().find((h) => h.items.some((i) => i.field === 'status'));
+    // (Jira returns history newest first on some sites and oldest first on others, so sort by date)
+    const last = histories.filter((h) => h.items.some((i) => i.field === 'status'))
+      .sort((x, y) => new Date(y.created) - new Date(x.created))[0];
     if (!last) continue;
     read++;
     const st = last.items.find((i) => i.field === 'status');
