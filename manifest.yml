@@ -1,0 +1,25 @@
+modules:
+  jira:globalPage:
+    - key: interlock
+      resource: main
+      resolver:
+        function: resolver
+      title: Interlock
+      icon: resource:main;interlock-icon.svg
+  function:
+    - key: resolver
+      handler: index.handler
+resources:
+  - key: main
+    path: static/panel/dist
+permissions:
+  scopes:
+    - manage:jira-configuration
+    - read:jira-work
+    - write:jira-work
+app:
+  runtime:
+    name: nodejs24.x
+    memoryMB: 512
+    architecture: arm64
+  id: ari:cloud:ecosystem::app/c6e3cd9f-d392-4c9e-b878-c372c23c1c8a

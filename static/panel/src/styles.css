@@ -1,0 +1,137 @@
+@font-face { font-family: 'Overpass'; src: url('./fonts/Overpass.ttf') format('truetype'); font-weight: 100 900; font-display: swap; }
+
+:root {
+  /* the signal box: an enamel mimic panel, graphite track, three lamp colours */
+  --il-enamel: #e7ebe3;
+  --il-enamel-deep: #d7ddd3;
+  --il-track: #3a443d;
+  --il-ink: #1d2620;
+  --il-green: #1e8a5a;
+  --il-red: #c93a2e;
+  --il-amber: #d99a1c;
+  --il-off: #b4bcb2;
+  --il-text: var(--ds-text, #172b4d);
+  --il-subtle: var(--ds-text-subtle, #44546f);
+  --il-subtlest: var(--ds-text-subtlest, #626f86);
+  --il-surface: var(--ds-surface, #ffffff);
+  --il-border: var(--ds-border, #091e4224);
+  --il-brand: var(--ds-background-brand-bold, #0c66e4);
+  --il-font: 'Overpass', var(--ds-font-family-body, ui-sans-serif, 'Segoe UI', sans-serif);
+}
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; height: 100%; }
+body { background: var(--il-surface); color: var(--il-text); font: 14px/1.45 var(--il-font); font-variant-numeric: tabular-nums; }
+button, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--ds-border-focused, #388bff); outline-offset: 2px; }
+
+.il-app { display: grid; grid-template-rows: auto 1fr; height: 100vh; min-height: 560px; }
+.il-head { display: flex; align-items: center; gap: 20px; padding: 14px 20px; border-bottom: 1px solid var(--il-border); }
+.il-brand { display: flex; align-items: center; gap: 10px; }
+.il-brand h1 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 0.01em; }
+.il-summary { margin: 0; flex: 1; color: var(--il-subtle); max-width: 90ch; }
+.il-summary b { color: var(--il-text); font-weight: 700; }
+.il-btn { border: 1px solid var(--il-border); background: var(--il-surface); border-radius: 4px; padding: 6px 12px; cursor: pointer; font-weight: 600; }
+.il-btn:hover { background: var(--ds-background-neutral-subtle-hovered, #091e420f); }
+.il-btn.primary { background: var(--il-brand); color: var(--ds-text-inverse, #fff); border-color: transparent; }
+.il-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.il-link { border: 0; background: none; padding: 0; color: var(--ds-link, #0c66e4); cursor: pointer; font-weight: 600; }
+
+.il-body { display: grid; grid-template-columns: 300px minmax(0, 1fr) 380px; min-height: 0; }
+
+/* lamps */
+.il-lamp { display: inline-block; width: 11px; height: 11px; border-radius: 50%; flex: none; background: var(--il-off); box-shadow: inset 0 -2px 2px rgba(0, 0, 0, 0.15); }
+.il-lamp.green { background: radial-gradient(circle at 35% 35%, #7be0ad, var(--il-green) 60%); box-shadow: 0 0 6px rgba(30, 138, 90, 0.55); }
+.il-lamp.red { background: radial-gradient(circle at 35% 35%, #ff9b8f, var(--il-red) 60%); box-shadow: 0 0 7px rgba(201, 58, 46, 0.6); }
+.il-lamp.amber { background: radial-gradient(circle at 35% 35%, #ffd98a, var(--il-amber) 60%); box-shadow: 0 0 6px rgba(217, 154, 28, 0.55); }
+
+/* the lever frame: one lever per workflow */
+.il-levers { border-right: 1px solid var(--il-border); overflow: auto; background: var(--il-surface); }
+.il-filter { display: flex; gap: 4px; padding: 10px 12px; position: sticky; top: 0; background: var(--il-surface); border-bottom: 1px solid var(--il-border); z-index: 1; }
+.il-filter button { border: 0; background: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; color: var(--il-subtle); font-weight: 600; }
+.il-filter button.on { background: var(--ds-background-selected, #e9f2ff); color: var(--ds-text-selected, #0c66e4); }
+.il-filter span { color: var(--il-subtlest); font-weight: 500; margin-left: 4px; }
+.il-levers ul { list-style: none; margin: 0; padding: 6px 0; }
+.il-lever { display: grid; grid-template-columns: 14px 1fr auto; align-items: center; gap: 10px; width: 100%; border: 0; background: none; padding: 7px 14px; text-align: left; cursor: pointer; }
+.il-lever:hover { background: var(--ds-background-neutral-subtle-hovered, #091e420a); }
+.il-lever .handle { width: 6px; height: 22px; border-radius: 3px; background: var(--il-off); justify-self: center; transition: transform 0.25s cubic-bezier(.3, 1.6, .5, 1), background 0.2s; transform-origin: 50% 100%; }
+.il-lever.pulled .handle { background: var(--il-ink); transform: rotate(-22deg); }
+.il-lever.pulled { background: var(--ds-background-selected, #e9f2ff); }
+.il-lever .name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.il-lever .count { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: 12px; color: var(--il-red); }
+
+/* the track diagram on its enamel panel */
+.il-main { overflow: auto; background:
+  linear-gradient(var(--il-enamel-deep) 1px, transparent 1px) 0 0 / 28px 28px,
+  linear-gradient(90deg, var(--il-enamel-deep) 1px, transparent 1px) 0 0 / 28px 28px, var(--il-enamel); }
+.il-diagram-wrap { padding: 24px; min-width: max-content; }
+.il-diagram { display: block; overflow: visible; }
+.il-rail { stroke: var(--il-track); stroke-width: 2; stroke-dasharray: 2 5; }
+.il-rail-label { font-size: 11px; fill: var(--il-ink); opacity: 0.6; font-weight: 600; }
+.il-track { fill: none; stroke: var(--il-track); stroke-width: 3; opacity: 0.85; stroke-linecap: round; }
+.il-track.global { stroke-width: 1.6; stroke-dasharray: 3 4; opacity: 0.55; }
+.il-track.route { stroke: var(--il-red); stroke-width: 5; opacity: 1; stroke-dasharray: 10 6; animation: il-flow 0.6s linear infinite; }
+@keyframes il-flow { to { stroke-dashoffset: -16; } }
+.il-block rect { fill: #fbfcfa; stroke: var(--il-track); stroke-width: 1.5; }
+.il-block.done rect { stroke-width: 2.5; }
+.il-block text { font-size: 13px; font-weight: 600; fill: var(--il-ink); }
+.il-block text.start { font-size: 11px; font-weight: 700; fill: var(--il-green); }
+/* the explorer reaching each status lights its lamp, in the order it reached them */
+.il-block .lamp { fill: var(--il-off); animation: il-light 0.3s ease-out forwards; animation-delay: var(--t); }
+.il-block.green .lamp { --on: var(--il-green); }
+.il-block.red .lamp { --on: var(--il-red); }
+.il-block.amber .lamp { --on: var(--il-amber); animation-delay: 1.2s; }
+@keyframes il-light { to { fill: var(--on); } }
+.il-block.red rect { stroke: var(--il-red); stroke-width: 2.5; }
+.il-train circle { fill: #fff6d6; stroke: var(--il-red); stroke-width: 3; filter: drop-shadow(0 0 6px rgba(201, 58, 46, 0.8)); }
+.il-train .core { fill: var(--il-red); stroke: none; }
+.il-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 18px 0 0; font-size: 12px; color: var(--il-ink); }
+.il-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.il-legend .tm { font-weight: 600; }
+
+/* the interlocking table */
+.il-table { border-left: 1px solid var(--il-border); overflow: auto; padding: 16px; background: var(--il-surface); }
+.il-table h2 { font-size: 16px; margin: 0 0 4px; }
+.il-meta, .il-note { color: var(--il-subtle); font-size: 13px; margin: 0 0 12px; }
+.il-held { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+.il-findings { list-style: none; padding: 0; margin: 0 0 16px; }
+.il-finding { border: 1px solid var(--il-border); border-radius: 6px; margin-bottom: 8px; }
+.il-finding.on { border-color: var(--il-red); box-shadow: 0 0 0 1px var(--il-red); }
+.il-finding.confirmed { border-left: 4px solid var(--il-red); }
+.il-finding-main { display: flex; gap: 10px; align-items: flex-start; width: 100%; padding: 10px 12px; border: 0; background: none; text-align: left; cursor: pointer; }
+.il-finding-main .il-lamp { margin-top: 4px; }
+.il-finding-main span { display: flex; flex-direction: column; color: var(--il-subtle); font-size: 13px; }
+.il-finding-main b { color: var(--il-text); font-size: 14px; }
+.il-finding-body { padding: 0 12px 12px 33px; }
+.il-finding-body > p { margin: 0 0 10px; color: var(--il-subtle); font-size: 13px; }
+.il-route { list-style: none; margin: 0 0 12px; padding: 0 0 0 14px; border-left: 3px solid var(--il-red); }
+.il-route li { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; padding: 3px 0; font-size: 13px; }
+.il-route .via { color: var(--il-subtle); }
+.il-route .via::after { content: ' to'; }
+.il-route .st { font-weight: 700; }
+.il-route em { font-style: normal; font-size: 12px; color: var(--il-subtlest); }
+.il-replay { border-radius: 6px; padding: 10px 12px; margin-top: 8px; background: var(--ds-background-neutral, #091e420f); }
+.il-replay.confirmed { background: var(--ds-background-danger, #ffeceb); }
+.il-replay.cleared { background: var(--ds-background-success, #dcfff1); }
+.il-replay p { margin: 0 0 6px; font-size: 13px; }
+.il-replay b { margin-right: 6px; }
+.il-replay ol { margin: 0 0 6px; padding-left: 18px; font-size: 12px; color: var(--il-subtle); }
+.il-replay li span:first-child { font-weight: 700; margin-right: 6px; color: var(--il-text); }
+.il-err { color: var(--ds-text-danger, #ae2e24); font-size: 13px; }
+.il-rules { border-top: 1px solid var(--il-border); padding-top: 12px; }
+.il-rules h3 { font-size: 14px; margin: 0 0 4px; }
+.il-rule { font-size: 13px; margin: 0 0 6px; }
+.il-rule-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
+.il-rule-form select { padding: 4px 6px; border: 1px solid var(--il-border); border-radius: 4px; background: var(--il-surface); max-width: 150px; }
+
+.il-boot { display: grid; place-items: center; align-content: center; gap: 14px; height: 100vh; background: var(--il-enamel); color: var(--il-ink); }
+.il-boot-track { display: flex; gap: 22px; padding: 10px 24px; border-top: 3px solid var(--il-track); }
+.il-boot .il-lamp { animation: il-blink 1s ease-in-out infinite; }
+@keyframes il-blink { 50% { opacity: 0.25; } }
+.il-boot p { margin: 0; }
+.il-empty { padding: 40px; max-width: 60ch; }
+
+@media (max-width: 1100px) { .il-body { grid-template-columns: 240px minmax(0, 1fr); } .il-table { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--il-border); } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } .il-block .lamp { fill: var(--on); } }
+.il-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px 33px; }
+.il-chips button { border: 1px solid var(--il-border); background: var(--il-surface); border-radius: 999px; padding: 2px 10px; font-size: 12px; cursor: pointer; }
+.il-chips button.on { border-color: var(--il-red); color: var(--il-red); font-weight: 700; }
