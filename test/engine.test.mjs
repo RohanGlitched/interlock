@@ -73,3 +73,16 @@ test('a fix or replay chooses the resolution a person would', () => {
   assert.equal(resolutionFor(values, 'Canceled', 'Cancel request').name, 'Cancelled');
   assert.equal(resolutionFor(values, 'Purchased').name, 'Done');
 });
+
+test('a route to a successful outcome that skips every approval step is found', () => {
+  const st = new Map([...statuses, ['6', { name: 'Awaiting approval', category: 'IN_PROGRESS' }], ['7', { name: 'Declined', category: 'DONE' }]]);
+  const approvalWf = (extra) => ({ id: 'w', name: 'W', statuses: [
+    { statusReference: '1' }, { statusReference: '6', properties: { 'approval.groups': 'cab' } }, { statusReference: '4' }, { statusReference: '7' }],
+  transitions: [{ id: '0', type: 'INITIAL', toStatusReference: '1' }, tr('1', 'Ask', ['1'], '6'), tr('2', 'Approve', ['6'], '4', { actions: setRes }),
+    tr('3', 'Decline', ['1', '6'], '7', { actions: setRes }), ...extra] });
+  assert.deepEqual(verify(approvalWf([]), st).findings.filter((f) => f.property === 'approvalSkipped'), []);
+  const skip = verify(approvalWf([tr('9', 'Emergency close', ['1'], '4', { actions: setRes })]), st);
+  const f = skip.findings.filter((x) => x.property === 'approvalSkipped');
+  assert.deepEqual(f.map((x) => x.subject), ['Done']);
+  assert.deepEqual(f[0].route.hops.map((h) => h.transition), ['Emergency close']);
+});

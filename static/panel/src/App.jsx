@@ -430,7 +430,7 @@ function Fix({ f, result, onFixed }) {
 }
 
 // One row per property, worst first; each affected status becomes a chip with its own route.
-const SEVERITY = ['stranded', 'mustPass', 'doneUnresolved', 'openResolved', 'nobody', 'unreachable'];
+const SEVERITY = ['approvalSkipped', 'stranded', 'mustPass', 'doneUnresolved', 'openResolved', 'nobody', 'unreachable'];
 function groupFindings(findings) {
   const by = new Map();
   for (const f of findings) { if (!by.has(f.property)) by.set(f.property, []); by.get(f.property).push(f); }

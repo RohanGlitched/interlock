@@ -46,6 +46,17 @@ These came with the demo site's sample projects (business templates and sample c
 | Web design process task and sub-task workflows | DESIGN | Done but unresolved | Launch |
 | Bug Intake, NIST Workflow, Simple Inventory Example | ENGS, SECOPS, FAC | Done but unresolved | 1 done status each |
 
+## Approvals that can be skipped
+
+Interlock also checks a workflow's approval steps (the statuses where Jira Service Management asks named approvers to approve). In a workflow that has one, every route to a successful outcome should pass it. On the demo site:
+
+| Workflow | Projects | Route that skips the approval |
+|---|---|---|
+| Change Management workflow for Jira Service Management | ENGS (and OMI1121) | **Mark as done** takes a change straight to Completed without passing Authorize |
+| Post-Incident Review workflow for Jira Service Management | ENGS, SECOPS (and OMI1121) | Draft → **Mark as published** reaches Published (and then Closed) without passing Awaiting approval |
+
+Whether a shortcut like "Mark as done" is acceptable is a policy decision (standard changes are often pre-approved), but it should be a decision someone made, not a route nobody knew about.
+
 ## Confirmed on real work items, not just in the model
 
 A proof says a route exists. Interlock then replays the route through Jira's own transitions API on a new work item, filling in each transition screen the way a person would, and reads back the status and resolution after every step.

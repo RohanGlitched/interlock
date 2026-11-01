@@ -10,6 +10,7 @@ export const PROPERTIES = {
   unreachable: { title: 'Status nobody can reach', why: 'No route from creation leads to this status.' },
   nobody: { title: 'Transition nobody can use', why: 'Its conditions allow no user, role, group or permission, so the button never appears.' },
   mustPass: { title: 'Route skips a required status', why: 'Work can reach the target without passing the status your rule requires.' },
+  approvalSkipped: { title: 'Done without approval', why: 'This workflow asks for an approval, but a route reaches a successful done status without passing any approval step, so work can be completed without anyone approving it.' },
 };
 
 const RES_FIELD = 'resolution';
@@ -19,7 +20,10 @@ const RES_FIELD = 'resolution';
 // screenHasResolution: Set of transition screen ids whose tabs include the Resolution field.
 export function buildModel(workflow, statuses, { screenHasResolution = new Set(), teamManaged = false } = {}) {
   const ids = workflow.statuses.map((s) => s.statusReference);
-  const st = ids.map((id) => ({ id, name: statuses.get(id)?.name || id, category: statuses.get(id)?.category || 'IN_PROGRESS' }));
+  const props = new Map(workflow.statuses.map((s) => [s.statusReference, s.properties || {}]));
+  // Jira Service Management marks an approval step with approval.* properties on the status
+  const st = ids.map((id) => ({ id, name: statuses.get(id)?.name || id, category: statuses.get(id)?.category || 'IN_PROGRESS',
+    approval: Object.keys(props.get(id) || {}).some((k) => k.startsWith('approval.')) }));
   let initial = null;
   const transitions = [];
   for (const t of workflow.transitions) {
@@ -75,6 +79,7 @@ export function usableBySomeone(t) {
 }
 
 const key = (s, r) => `${s}|${r ? 1 : 0}`;
+const NEGATIVE = /cancel|declin|reject|withdr|won.?t|duplicate|abandon|obsolete|invalid|refused|denied|fail/i;
 
 // Breadth-first over (status, resolution set). In team-managed projects Jira keeps resolution in step
 // with the status category itself, so resolution is not modelled there.
@@ -89,7 +94,7 @@ export function explore(model, { skip = null } = {}) {
     for (const t of usable) {
       if (!t.from.includes(cur.s)) continue;
       if (t.type === 'GLOBAL' && t.to === cur.s) continue;
-      if (skip && t.to === skip) continue;
+      if (skip && (skip instanceof Set ? skip.has(t.to) : t.to === skip)) continue;
       let r = cur.r;
       if (model.teamManaged) r = cat.get(t.to) === 'DONE';
       else if (t.resolution === 'set') r = true;
@@ -158,6 +163,17 @@ export function check(model, { mustPass = [] } = {}) {
     for (const [s, k] of open) findings.push({ property: 'openResolved', status: s, subject: name.get(s), route: routeTo(seen, k, model) });
   }
   for (const t of model.transitions) if (!usableBySomeone(t)) findings.push({ property: 'nobody', transition: t.id, subject: t.name });
+  // Approvals: when a workflow has approval steps, every route to a successful outcome must pass one.
+  // Done statuses that name a negative outcome (cancelled, declined, rejected...) may be reached without one.
+  const approvals = new Set(model.statuses.filter((s) => s.approval).map((s) => s.id));
+  if (approvals.size && !approvals.has(model.initial)) {
+    const unapproved = explore(model, { skip: approvals });
+    for (const s of model.statuses) {
+      if (s.category !== 'DONE' || NEGATIVE.test(s.name)) continue;
+      const hit = [...unapproved.entries()].find(([, n]) => n.s === s.id);
+      if (hit) findings.push({ property: 'approvalSkipped', status: s.id, subject: s.name, route: routeTo(unapproved, hit[0], model) });
+    }
+  }
   // user rules: every route from creation to `target` passes through `via`
   for (const rule of mustPass) {
     if (rule.via === model.initial) continue; // every route starts there, so the rule holds

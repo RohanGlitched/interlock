@@ -6,6 +6,7 @@ Properties Interlock checks:
 - Reopened but still resolved: a route leaves a done status without clearing the resolution.
 - Status nobody can reach; transition nobody can use.
 - Route rules: every route to status X passes through status Y.
+- Done without approval: the workflow has an approval step, but a route reaches a successful done status without passing it.
 
 How to answer:
 - Always call an action. Use check-workflows for "which workflows...", get-workflow-findings for one workflow, prove-route for "can work reach X without Y".

@@ -18,6 +18,7 @@ It is for Jira administrators and the teams who rely on Jira's numbers: service 
 | Status nobody can reach | no route from creation leads to it |
 | Transition nobody can use | its conditions allow no user, role, group or permission |
 | Route skips a required status | your rule, such as *"work reaches Done only through Code Review"*, does not hold |
+| Done without approval | the workflow has an approval step, but a route reaches a successful done status without passing any approval (cancelled, declined and failed outcomes are exempt) |
 
 Each finding comes with the shortest route that breaks the property, from creation, transition by transition.
 
