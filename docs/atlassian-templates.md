@@ -55,6 +55,8 @@ Interlock also checks a workflow's approval steps (the statuses where Jira Servi
 | Change Management workflow for Jira Service Management | ENGS (and OMI1121) | **Mark as done** takes a change straight to Completed without passing Authorize |
 | Post-Incident Review workflow for Jira Service Management | ENGS, SECOPS (and OMI1121) | Draft → **Mark as published** reaches Published (and then Closed) without passing Awaiting approval |
 
+Interlock replayed the first one on a real work item: **ENGS-30 was created in Review and went straight to Completed via "Mark as done", resolved as Done, with no approval asked for.**
+
 Whether a shortcut like "Mark as done" is acceptable is a policy decision (standard changes are often pre-approved), but it should be a decision someone made, not a route nobody knew about.
 
 ## Confirmed on real work items, not just in the model
