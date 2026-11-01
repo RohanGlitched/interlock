@@ -75,7 +75,7 @@ export default function App() {
   return (
     <div className="il-app">
       <header className="il-head">
-        <div className="il-brand"><Lamp state="green" /><h1>Interlock</h1></div>
+        <div className="il-brand"><Lamp state="green" /><h1 className="sr">Interlock</h1></div>
         <p className="il-summary">
           Checked {plural(results.length, 'workflow', 'workflows')} and {totals.transitions.toLocaleString()} transitions, every reachable state, in {report.ms} ms.{' '}
           <b>{plural(totals.withFindings, 'workflow has', 'workflows have')} routes that go wrong</b>{totals.live ? <>, and <b className="il-live">{totals.live.toLocaleString()} work items are already in a wrong state</b>.</> : measuring ? '. Counting the work items already affected…' : '.'}
@@ -105,8 +105,8 @@ export default function App() {
               <li key={r.workflow.id}>
                 <button className={`il-lever ${r.workflow.id === sel.workflow.id ? 'pulled' : ''}`} onClick={() => { setSelId(r.workflow.id); setFocus(null); if (!frozen) setFrozen(ranked.map((x) => x.workflow.id)); }}>
                   <span className="handle" aria-hidden="true" />
-                  <span className="name">{r.workflow.name}</span>
-                  <span className="count">{liveOf(r) ? <span className="live" title="Work items already in a wrong state">{liveOf(r)}</span> : null}{r.findings.length ? <><Lamp state="red" />{r.findings.length}</> : <Lamp state="green" />}</span>
+                  <span className="name" title={r.workflow.name}>{r.workflow.name}</span>
+                  <span className="count">{liveOf(r) ? <span className="live" title={`${liveOf(r)} work items already in a wrong state`}>{liveOf(r)}</span> : null}{r.findings.length ? <span title={`${r.findings.length} ${r.findings.length === 1 ? 'finding' : 'findings'}`}><Lamp state="red" />{r.findings.length}</span> : <Lamp state="green" />}</span>
                 </button>
               </li>
             ))}
@@ -191,7 +191,7 @@ function Diagram({ model, result, focus }) {
   const globals = model.transitions.filter((t) => t.type === 'GLOBAL');
   return (
     <div className="il-diagram-wrap">
-      <svg className="il-diagram" viewBox={`0 0 ${width} ${height}`} style={{ maxWidth: width * (width < 900 ? 1.7 : 1), minWidth: Math.min(width, 380) }} role="img" aria-label={`Track diagram of ${result.workflow.name}`}>
+      <svg className={`il-diagram ${route.length ? 'focused' : ''}`} viewBox={`0 0 ${width} ${height}`} style={{ maxWidth: width * (width < 900 ? 1.7 : 1), minWidth: Math.min(width, 380) }} role="img" aria-label={`Track diagram of ${result.workflow.name}`}>
         <defs>
           <filter id="il-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.4" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
         </defs>
@@ -220,7 +220,7 @@ function Diagram({ model, result, focus }) {
             <g key={s.id} className={`il-block ${s.category.toLowerCase()} ${state}`} transform={`translate(${p.x},${p.y})`} style={{ '--t': `${i * 90}ms` }}>
               <rect width={BLOCK_W} height={BLOCK_H} rx="5" />
               <circle className="lamp" cx="16" cy={BLOCK_H / 2} r="6" />
-              <text x="30" y={BLOCK_H / 2 + 5}>{s.name.length > 19 ? s.name.slice(0, 18) + '…' : s.name}</text>
+              <StatusLabel name={s.name} />
               {s.id === model.initial && <text className="start" x="0" y="-8">Created here</text>}
             </g>
           );
@@ -230,6 +230,15 @@ function Diagram({ model, result, focus }) {
       <Legend teamManaged={result.teamManaged} />
     </div>
   );
+}
+
+// A status name on its block: one line when it fits, two lines split at a space when it does not
+function StatusLabel({ name }) {
+  if (name.length <= 19) return <text x="30" y={BLOCK_H / 2 + 5}>{name}</text>;
+  const cut = name.lastIndexOf(' ', 19) > 6 ? name.lastIndexOf(' ', 19) : 19;
+  const a = name.slice(0, cut).trim(), rest = name.slice(cut).trim();
+  const b = rest.length > 19 ? rest.slice(0, 18) + '…' : rest;
+  return <text x="30" y={BLOCK_H / 2 - 2} className="two"><tspan x="30">{a}</tspan><tspan x="30" dy="13">{b}</tspan><title>{name}</title></text>;
 }
 
 function Legend({ teamManaged }) {
@@ -255,7 +264,7 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
     } catch (e) { setReplays((r) => ({ ...r, [k]: { status: 'error', error: e.message } })); }
   }
   return (
-    <aside className="il-table" aria-label="Interlocking table">
+    <aside className="il-table" aria-label="Interlocking table" ref={(el) => { if (el && el.dataset.wf !== result.workflow.id) { el.scrollTop = 0; el.dataset.wf = result.workflow.id; } }}>
       <h2>{result.workflow.name}</h2>
       <p className="il-meta">{plural(result.statuses, 'status', 'statuses')}, {plural(result.transitions, 'transition', 'transitions')}, {plural(result.states, 'reachable state', 'reachable states')}{usage ? `, used in ${[...new Set(result.usage.map((u) => u.project))].join(', ')}` : ''}.</p>
       {!result.findings.length && <p className="il-held"><Lamp state="green" />Every property holds for every reachable state.</p>}
@@ -373,7 +382,7 @@ function Demo({ onDone }) {
   };
   return (
     <div className="il-demo">
-      {state ? <p>{state}</p> : <><p>New site, nothing to prove yet?</p><button className="il-btn" onClick={go}>Add the Ship demo project</button></>}
+      {state ? <p>{state}</p> : <><p>Want a software example with a review rule to prove?</p><button className="il-btn" onClick={go}>Add the Ship demo project</button></>}
     </div>
   );
 }
@@ -491,7 +500,7 @@ function Watch({ stamp }) {
           Watched daily. Last proof {when(w.last.at)}{w.last.by === 'daily watch' ? ' by the daily watch' : ''}:{' '}
           {fresh ? <>{count(latest, 'new') ? <b>{plural(count(latest, 'new'), 'new finding', 'new findings')}</b> : null}{count(latest, 'new') && count(latest, 'fixed') ? ', ' : ''}{count(latest, 'fixed') ? plural(count(latest, 'fixed'), 'finding fixed', 'findings fixed') : ''} since the proof before.</> : 'nothing changed since the proof before.'}
         </span>
-        {w.history?.length > 0 && <span className="il-watch-more">History</span>}
+        {w.history?.length > 0 && <span className="il-watch-more">Show history</span>}
       </summary>
       {w.history?.length > 0 && (
         <ol>

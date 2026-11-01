@@ -179,7 +179,7 @@ button, select { font: inherit; color: inherit; }
 .il-watch summary::-webkit-details-marker { display: none; }
 .il-watch summary b { color: var(--il-red); }
 .il-watch-more { margin-left: auto; color: var(--il-brand); }
-.il-watch[open] .il-watch-more::after { content: ' (hide)'; }
+.il-watch[open] .il-watch-more { font-size: 0; } .il-watch[open] .il-watch-more::after { content: 'Hide history'; font-size: 13px; }
 .il-watch ol { list-style: none; margin: 0; padding: 4px 20px 12px 41px; max-height: 220px; overflow: auto; }
 .il-watch ol > li { display: grid; grid-template-columns: 150px 1fr; gap: 10px; padding: 6px 0; border-top: 1px solid var(--il-border); }
 .il-watch time { color: var(--il-subtlest); font-variant-numeric: tabular-nums; }
@@ -188,3 +188,12 @@ button, select { font: inherit; color: inherit; }
 .il-watch ul li .il-lamp { width: 8px; height: 8px; flex: none; transform: translateY(1px); }
 
 .il-replay-act { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 8px 0 0; }
+
+/* a focused route: its track at full light, the rest of the frame dimmed */
+.il-diagram.focused .il-track:not(.route) { opacity: 0.18; transition: opacity .25s ease; }
+.il-diagram .il-block text.two { font-size: 11.5px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* rule pickers in the panel's own style rather than the browser default */
+.il-rule-form select { appearance: none; padding: 5px 26px 5px 9px; border: 1px solid var(--il-border); border-radius: 4px; font: inherit; font-size: 13px; color: var(--il-text);
+  background: var(--il-surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2344546f' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 9px center; }
+.il-rule-form select:focus-visible { outline: 2px solid var(--il-brand); outline-offset: 1px; }
