@@ -21,7 +21,7 @@ It is for Jira administrators and the teams who rely on Jira's numbers: service 
 
 Each finding comes with the shortest route that breaks the property, from creation, transition by transition.
 
-Most of those findings come from Jira's own built-in templates, copied unchanged into every project that uses them. One was confirmed on a real work item: in the Change Management template, a declined change sent back to Review stays resolved as Declined. The full list is in [Defects in Jira's built-in workflow templates](docs/atlassian-templates.md).
+13 of those 29 are copies of Jira Service Management's own template workflows; the Change Management template alone appears in six projects with the same five findings. One was confirmed on a real work item: in the Change Management template, a declined change sent back to Review stays resolved as Declined. The full list is in [Resolution defects in Jira's template workflows](docs/atlassian-templates.md).
 
 ## Evidence, in three steps
 

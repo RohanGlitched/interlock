@@ -1,8 +1,12 @@
-# Defects in Jira's built-in workflow templates
+# Resolution defects in Jira's template workflows
 
 We ran Interlock on an Atlassian demo site on Nov 1, 2026, before we added anything to it. The site came with sample projects made from Jira's own templates: IT service management, HR, facilities, legal, marketing, procurement, design and security operations.
 
-Interlock checked 97 workflows and 761 transitions. **29 workflows have routes that leave the resolution wrong**, and **78 work items in the sample projects were already in that wrong state.** Most of the 29 are Atlassian's built-in templates, copied unchanged into each project that uses them, so every team that starts from those templates inherits the same routes.
+Interlock checked 97 workflows and 761 transitions. **29 workflows have routes that leave the resolution wrong**, and **78 work items in the sample projects were already in that wrong state.**
+
+**13 of the 29 are copies of Jira Service Management's own template workflows**, named as Jira names them ("Change Management workflow for Jira Service Management"). The Change Management template alone appears in six projects with the same five findings. A team that creates a service project from that template gets the same routes, unless it edits the workflow. We checked this on one demo site; we have not yet created each template on a fresh site to confirm the template itself rather than this site's copy. The other 16 are business-template and sample workflows that came with the demo site; their findings are real for this site but should not be read as product defects.
+
+The work-item counts come from the site's seeded sample data, so they show that the routes are used, not how often real teams hit them.
 
 ## What goes wrong
 
@@ -11,7 +15,7 @@ Jira decides whether work is finished by its **resolution**, not its status. Fil
 - **Done but unresolved:** a route reaches a done status without setting a resolution, so finished work keeps counting as open.
 - **Reopened but still resolved:** a route takes work out of a done status without clearing the resolution, so open work counts as finished and keeps its old resolved date.
 
-## Template workflows with findings
+## Jira Service Management template workflows with findings
 
 | Template workflow | Projects on the demo site using a copy | Finding | Statuses affected |
 |---|---|---|---|
@@ -21,6 +25,13 @@ Jira decides whether work is finished by its **resolution**, not its status. Fil
 | Simple ESM workflow for Jira Service Management | HR | Reopened but still resolved | SME Support Required, In Progress |
 | Default workflow for Customer Service Management | TALLY | Reopened but still resolved | In Progress, Escalated, Waiting for customer |
 | Incident Management workflow for Jira Service Management | SECOPS | Done but unresolved | Completed, Closed |
+
+## Other workflows on the demo site with findings
+
+These came with the demo site's sample projects (business templates and sample content). Their findings are real for this site; they are listed for completeness, not as product defects.
+
+| Workflow | Projects | Finding | Statuses affected |
+|---|---|---|---|
 | Multilevel Approvals | ITO, ITS | Done but unresolved | 1 done status |
 | Onboarding, Offboarding (HR) | HR | Done but unresolved, Reopened but still resolved | 2 and 1 statuses |
 | Procurement Workflow, Procurement Workflow v2 | PROC | Done but unresolved | Purchased, Rejected |
