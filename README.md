@@ -21,7 +21,7 @@ It is for Jira administrators and the teams who rely on Jira's numbers: service 
 
 Each finding comes with the shortest route that breaks the property, from creation, transition by transition.
 
-13 of those 29 are copies of Jira Service Management template workflows; the Change Management copy appears in six projects with the same five findings, and one was confirmed on a real work item: a declined change sent back to Review stays resolved as Declined. A project created from the same template today is clean, because Atlassian has since changed the template. Template fixes never reach the projects already made from them, and nothing in Jira tells an admin which workflows still carry the old routes. The full list is in [Resolution defects in template-made workflows](docs/atlassian-templates.md).
+13 of those 29 are copies of Jira Service Management template workflows; the Change Management copy appears in six projects with the same five findings, and one was confirmed on a real work item: a declined change sent back to Review stays resolved as Declined. A project created from the same template today does not have that route, so these copies come from an earlier version of the template or were edited after they were made. Either way, nothing in Jira tells an admin which workflows still carry such routes; Interlock does. The full list is in [Resolution defects in template-made workflows](docs/atlassian-templates.md).
 
 ## Evidence, in three steps
 
