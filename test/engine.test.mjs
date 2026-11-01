@@ -106,6 +106,24 @@ test('work that starts at the approval step can still skip it', () => {
   assert.deepEqual(f.map((x) => x.route.hops.map((h) => h.transition).join()), ['Emergency']);
 });
 
+test('a rule is checked on every arrival: reopening and closing again without review breaks it', () => {
+  const w = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '4', { actions: setRes }),
+    tr('4', 'Reopen', ['4'], '2', { actions: clearRes }), tr('5', 'Quick close', ['2'], '4', { actions: setRes, conditions: undefined })]);
+  // without the reopen, Quick close from In Progress is a direct skip anyway; take it away to test the reopen case
+  const noShortcut = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '4', { actions: setRes }),
+    tr('4', 'Reopen', ['4'], '2', { actions: clearRes }), tr('6', 'Close again', ['2'], '4', { actions: setRes })]);
+  const f = verify(noShortcut, statuses, { mustPass: [{ target: '4', via: '3' }] }).findings.filter((x) => x.property === 'mustPass');
+  assert.equal(f.length, 1);
+  assert.deepEqual(f[0].route.hops.map((h) => h.transition), ['Start', 'Close again']);
+  const ok = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '4', { actions: setRes }), tr('4', 'Reopen', ['4'], '3', { actions: clearRes })]);
+  assert.deepEqual(verify(ok, statuses, { mustPass: [{ target: '4', via: '3' }] }).findings.filter((x) => x.property === 'mustPass'), []);
+  const reopen = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '4', { actions: setRes }),
+    tr('4', 'Reopen', ['4'], '5'), tr('7', 'Close', ['5'], '4', { actions: setRes })], ['1', '2', '3', '4', '5']);
+  const g = verify(reopen, statuses, { mustPass: [{ target: '4', via: '3' }] }).findings.filter((x) => x.property === 'mustPass');
+  assert.deepEqual(g[0].route.hops.map((h) => h.transition), ['Start', 'Review', 'Approve', 'Reopen', 'Close']);
+  assert.equal(verify(ok, statuses, { mustPass: [{ target: '4', via: '99' }] }).findings.filter((x) => x.property === 'ruleStale').length, 1);
+});
+
 // ---------- the history trace ----------
 import { lastStatusChange, waysOf } from '../engine/trace.mjs';
 const h = (created, ...items) => ({ created, items });

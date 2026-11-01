@@ -9,7 +9,8 @@ export const PROPERTIES = {
   openResolved: { title: 'Reopened but still resolved', why: 'A route leaves a done status without clearing the resolution, so open work counts as resolved and keeps its old resolved date.' },
   unreachable: { title: 'Status nobody can reach', why: 'No route from creation leads to this status.' },
   nobody: { title: 'Transition nobody can use', why: 'Its conditions allow no user, role, group or permission, so the button never appears.' },
-  mustPass: { title: 'Route skips a required status', why: 'Work can reach the target without passing the status your rule requires.' },
+  mustPass: { title: 'Route skips a required status', why: 'Work can reach the target without passing the status your rule requires, either the first time or after it is reopened.' },
+  ruleStale: { title: 'Rule names a status this workflow no longer has', why: 'The rule was saved for a status that has since been removed from the workflow, so it proves nothing. Remove it or save it again.' },
   approvalSkipped: { title: 'Done without approval', why: 'This workflow asks for an approval, but a route reaches a successful done status without passing any approval step, so work can be completed without anyone approving it.' },
 };
 
@@ -109,6 +110,36 @@ export function explore(model, { skip = null } = {}) {
   return seen;
 }
 
+// A team rule "work reaches `target` only through `via`", checked on every arrival at the target, not
+// only the first: breadth-first over (status, resolution set, passed `via` since work last left the target).
+// Reopening work and closing it again without passing `via` breaks the rule.
+function exploreRule(model, target, via) {
+  const cat = new Map(model.statuses.map((s) => [s.id, s.category]));
+  const usable = model.transitions.filter(usableBySomeone);
+  const k3 = (s, r, p) => `${s}|${r ? 1 : 0}|${p ? 1 : 0}`;
+  const start = { s: model.initial, r: false, p: model.initial === via };
+  const seen = new Map([[k3(start.s, start.r, start.p), { ...start, prev: null, via: null }]]);
+  const queue = [start];
+  let hit = null;
+  while (queue.length && !hit) {
+    const cur = queue.shift();
+    for (const t of usable) {
+      if (!t.from.includes(cur.s) || (t.type === 'GLOBAL' && t.to === cur.s)) continue;
+      let r = cur.r;
+      if (model.teamManaged) r = cat.get(t.to) === 'DONE';
+      else if (t.resolution === 'set') r = true;
+      else if (t.resolution === 'clear') r = false;
+      const p = t.to === via ? true : cur.s === target && t.to !== target ? false : cur.p;
+      const k = k3(t.to, r, p);
+      if (seen.has(k)) continue;
+      seen.set(k, { s: t.to, r, p, prev: k3(cur.s, cur.r, cur.p), via: t });
+      if (t.to === target && !p) { hit = k; break; }
+      queue.push({ s: t.to, r, p });
+    }
+  }
+  return { seen, hit };
+}
+
 // Breadth-first over (status, resolution set, approved). Work counts as approved only when it leaves an
 // approval step for an outcome that is not negative (declining and coming back later is not an approval).
 function exploreApproval(model, approvals) {
@@ -206,10 +237,9 @@ export function check(model, { mustPass = [] } = {}) {
   }
   // user rules: every route from creation to `target` passes through `via`
   for (const rule of mustPass) {
-    if (rule.via === model.initial) continue; // every route starts there, so the rule holds
-    const skipped = explore(model, { skip: rule.via });
-    const hit = [...skipped.entries()].find(([, n]) => n.s === rule.target);
-    if (hit) findings.push({ property: 'mustPass', rule, subject: `${name.get(rule.target)} without ${name.get(rule.via)}`, route: routeTo(skipped, hit[0], model) });
+    if (!name.has(rule.target) || !name.has(rule.via)) { findings.push({ property: 'ruleStale', rule, subject: `${name.get(rule.target) || 'a removed status'} only through ${name.get(rule.via) || 'a removed status'}` }); continue; }
+    const { seen: ruled, hit } = exploreRule(model, rule.target, rule.via);
+    if (hit) findings.push({ property: 'mustPass', rule, subject: `${name.get(rule.target)} without ${name.get(rule.via)}`, route: routeTo(ruled, hit, model) });
   }
   return findings.map((f, i) => ({ id: `f${i + 1}`, ...PROPERTIES[f.property], ...f }));
 }
