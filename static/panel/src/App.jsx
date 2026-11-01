@@ -561,7 +561,7 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
           </ul>
         </section>
       )}
-      {model.statuses && <Rules key={result.workflow.id} model={model} rules={rules} setRules={setRules} />}
+      {model.statuses && <Rules key={result.workflow.id} model={model} rules={rules} setRules={setRules} findings={result.findings} onShow={setFocus} />}
     </aside>
   );
 }
@@ -756,8 +756,12 @@ function Intend({ onSave }) {
 }
 
 // ---------- rules you can prove ----------
-function Rules({ model, rules, setRules }) {
+function Rules({ model, rules, setRules, findings = [], onShow }) {
   const [target, setTarget] = useState(''), [via, setVia] = useState('');
+  // each rule's verdict, from the proof; a rule just added lights its broken route at once
+  const brokenBy = (r) => findings.find((f) => f.property === 'mustPass' && String(f.rule?.target) === String(r.target) && String(f.rule?.via) === String(r.via));
+  const [justAdded, setJustAdded] = useState(null);
+  useEffect(() => { if (!justAdded) return; const f = brokenBy(justAdded); if (f) onShow?.(f); setJustAdded(null); }, [findings, justAdded]); // eslint-disable-line react-hooks/exhaustive-deps
   const done = model.statuses.filter((s) => s.category === 'DONE');
   return (
     <section className="il-rules">
@@ -766,14 +770,19 @@ function Rules({ model, rules, setRules }) {
       {!rules.length && (() => {
         const open = model.statuses.filter((x) => x.category !== 'DONE' && x.id !== model.initial);
         const review = open.find((x) => /code review/i.test(x.name)) || open.find((x) => /review/i.test(x.name)) || open.find((x) => /qa|test/i.test(x.name));
-        const done = model.statuses.find((x) => x.category === 'DONE');
+        const done = model.statuses.find((x) => x.category === 'DONE' && !/cancel|declin|reject|won.?t|duplicate|abandon|obsolete|invalid/i.test(x.name));
         return review && done && (
-          <p className="il-suggest">Try a rule teams rely on: <button className="il-link" onClick={() => setRules([{ target: done.id, via: review.id }])}>work reaches {done.name} only through {review.name}</button></p>
+          <p className="il-suggest">Try a rule teams rely on: <button className="il-link" onClick={() => { const r = { target: done.id, via: review.id }; setRules([r]); setJustAdded(r); }}>work reaches {done.name} only through {review.name}</button></p>
         );
       })()}
-      {rules.map((r, i) => (
-        <p key={i} className="il-rule">Work reaches <b>{name(model, r.target)}</b> only through <b>{name(model, r.via)}</b> <button className="il-link" onClick={() => setRules(rules.filter((_, j) => j !== i))}>Remove</button></p>
-      ))}
+      {rules.map((r, i) => {
+        const f = brokenBy(r);
+        return (
+          <p key={i} className="il-rule"><Lamp state={f ? 'red' : 'green'} /> Work reaches <b>{name(model, r.target)}</b> only through <b>{name(model, r.via)}</b>:{' '}
+            {f ? <><b className="il-live">broken</b> <button className="il-link" onClick={() => onShow?.(f)}>Show the route</button></> : <b>holds on every route</b>}{' '}
+            <button className="il-link" onClick={() => setRules(rules.filter((_, j) => j !== i))}>Remove</button></p>
+        );
+      })}
       <div className="il-rule-form">
         <span>Work reaches</span>
         <select value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Target status">
@@ -785,7 +794,7 @@ function Rules({ model, rules, setRules }) {
           <option value="">a status…</option>
           {model.statuses.filter((s) => s.id !== target && s.id !== model.initial).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
-        <button className="il-btn" disabled={!target || !via} onClick={() => { setRules([...rules, { target, via }]); setTarget(''); setVia(''); }}>Prove it</button>
+        <button className="il-btn" disabled={!target || !via} onClick={() => { const r = { target, via }; setRules([...rules, r]); setJustAdded(r); setTarget(''); setVia(''); }}>Prove it</button>
       </div>
     </section>
   );
