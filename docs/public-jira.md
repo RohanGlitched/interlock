@@ -29,22 +29,28 @@ Each of these items is counted wrongly by any filter, dashboard or report that r
 
 Every item's change history is public, so we read it the way Interlock's "How did they get there?" does: the last status change on each item is the step that put it where it is. We read all of them (Nov 2, 2026) and also noted who made each step, because a step made by a person through a transition is a workflow route, while a step with no author is a system change such as a migration or a bulk script.
 
-**Apache, done but unresolved (1,844 items).** 764 have a status change in their history; the other 1,080 were created or imported already in that state, so no transition is to blame for them. Of the 764, **759 were moved by people: 115 different people over 353 different days**, through ordinary transitions that never set a resolution:
+**Apache, done but unresolved (1,844 items).** 764 have a status change in their history; the other 1,080 were created or imported already in that state, so no transition is to blame for them (MADLIB's 675 are almost all among them: 672 have no status change). Of the 764, **759 were moved there by people: 114 different people on 348 different days**, through ordinary transitions that never set a resolution. The largest:
 
-| The step that put them there | Items | Example |
+| Project and step | Items | Example |
 |---|---|---|
 | MXNET In Review → Done | 204 | [MXNET-1447](https://issues.apache.org/jira/browse/MXNET-1447): To Do → In Progress → In Review → Done, no resolution at any step |
 | HUDI Open → Resolved | 155 | [HUDI-9748](https://issues.apache.org/jira/browse/HUDI-9748): resolved in August 2025, resolution empty |
 | MXNET In Progress → Done | 129 | |
-| WOOKIE Patch Available → Closed | 78 | |
-| SLING Resolved → Closed | 47 | |
+| HUDI Patch Available → Closed | 74 | |
+| HUDI Patch Available → Resolved | 40 | |
+| HUDI Resolved → Closed | 35 | |
+| SDAP To Do → WontFix | 33 | |
 
 This is the pattern Interlock proves from configuration: a transition into a done status that does not set a resolution, used by many people for years, each use adding one more miscounted item.
 
-**Not every count is a route.** Two clusters turned out to be one-off operations, and we say so rather than count them as evidence:
+**Apache, open but still resolved (1,239 items).** This side is mostly not routes: 1,100 of the last steps have no author (BEAM's 637 "Resolved → Triage Needed" and Lucene's 379 are system changes after both projects moved to GitHub Issues in 2022), and 29 items have no status change. The rest were people, and the clearest route among them is the classic one: **a reopen from Closed that keeps the old resolution**, 25 times in GEODE ([GEODE-9489](https://issues.apache.org/jira/browse/GEODE-9489)) and 14 in IGNITE ([IGNITE-7537](https://issues.apache.org/jira/browse/IGNITE-7537)), by 31 different people.
+
+**Not every count is a route.** Two clusters on the other sites turned out to be one-off operations, and we say so rather than count them as evidence:
 
 - **Sourcetree (1,065):** every item was closed by one person on one day (September 19, 2019) through Resolved → Closed, after the project moved to another workflow. It is a single bulk close through a transition that does not set a resolution: the same defect, but one event.
-- **Lucene (380):** 379 of the last steps have no author; 367 happened in 2024, after Lucene moved to GitHub Issues in 2022. These are system changes, not people using the workflow.
+- **Lucene (380, open but still resolved):** 379 of the last steps have no author; 367 happened in 2024, after Lucene moved to GitHub Issues in 2022. These are system changes, not people using the workflow.
+
+These counts were read on Nov 2, 2026 with `prover/tools/public-trace.mjs` (below) and change as the sites change.
 
 ## Limits
 

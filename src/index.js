@@ -8,8 +8,18 @@ import { waysOf } from '../engine/trace.mjs';
 // Interlock reads the site's workflow configuration as the signed-in admin, checks every workflow,
 // and can replay a finding on a scratch work item to prove it happens for real.
 
+// Jira rate-limits busy sites with 429 (and sometimes 503): wait as long as it asks, up to three times.
+async function withRetry(send) {
+  for (let i = 0; ; i++) {
+    const res = await send();
+    if ((res.status !== 429 && res.status !== 503) || i === 3) return res;
+    const wait = Math.min(10, Number(res.headers.get('retry-after')) || 2 ** i);
+    await new Promise((ok) => setTimeout(ok, wait * 1000));
+  }
+}
+
 async function jira(path, init) {
-  const res = await api.asUser().requestJira(path, init);
+  const res = await withRetry(() => api.asUser().requestJira(path, init));
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`Jira answered ${res.status}: ${body.slice(0, 200)}`);
@@ -19,7 +29,7 @@ async function jira(path, init) {
 
 // The same, as the app itself: used by the daily watch, which runs with no user signed in.
 async function jiraApp(path, init) {
-  const res = await api.asApp().requestJira(path, init);
+  const res = await withRetry(() => api.asApp().requestJira(path, init));
   if (!res.ok) throw new Error(`Jira answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
   return res.status === 204 ? null : res.json();
 }
@@ -81,17 +91,19 @@ export async function loadSite({ asApp = false, fresh = false } = {}) {
       // a screen Interlock cannot read is assumed to ask for the resolution: it may hide a finding, but it
       // never invents one; the report says how many screens were unreadable
       if (!tabs) { unreadable.push(id); return; }
-      screens[id] = false;
       for (const tab of tabs) {
-        const fields = await call(route`/rest/api/3/screens/${id}/tabs/${tab.id}/fields`).catch((e) => { screenErrors.push(`${id}/${tab.id}: ${e.message}`); return []; });
+        const fields = await call(route`/rest/api/3/screens/${id}/tabs/${tab.id}/fields`).catch((e) => { screenErrors.push(`${id}/${tab.id}: ${e.message}`); return null; });
+        // a tab that cannot be read makes the whole screen unreadable (never "no resolution", which would invent a finding)
+        if (!fields) { unreadable.push(id); return; }
         if (fields.some((f) => f.id === 'resolution')) { screens[id] = true; return; }
       }
+      screens[id] = false;
     }),
   ]);
   // the cache keeps the time of its last full read, so every answer in it is at most 10 minutes old
   await kvs.set('cache:screens', { at: Object.keys(known).length ? cached.at : Date.now(), screens }).catch(() => {});
   const screenHasResolution = [...Object.keys(screens).filter((id) => screens[id]), ...unreadable];
-  if (screenErrors.length) console.warn('screens unreadable', screenErrors.slice(0, 3));
+  if (screenErrors.length) console.warn(`Interlock: ${screenErrors.length} screen reads failed`);
   const teamManagedProjects = new Set(projects.filter((p) => p.style === 'next-gen').map((p) => p.id));
   // a team-managed workflow belongs to its one project, so it is used there (no scheme to look up)
   const byId = Object.fromEntries(projects.map((p) => [p.id, p]));
@@ -122,6 +134,8 @@ export async function measure(site, report) {
   const count = async (jql) => (await jira(route`/rest/api/3/search/approximate-count`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jql }),
   })).count;
+  const ours = ((await kvs.get('replays').catch(() => null)) || []).filter((k) => /^[A-Z][A-Z0-9_]+-\d+$/.test(k)).slice(0, 200);
+  const notOurs = ours.length ? ` AND key not in (${ours.join(', ')})` : '';
   const jobs = [];
   for (const r of report.results) {
     const kinds = new Set(r.findings.map((f) => f.property).filter((p) => p === 'doneUnresolved' || p === 'openResolved'));
@@ -139,7 +153,8 @@ export async function measure(site, report) {
       const elsewhere = Object.entries(site.schemes?.[e.id] || {}).filter(([, name]) => name !== r.workflow.name).map(([t]) => t);
       return elsewhere.length ? `(project = "${key}" AND issuetype not in (${elsewhere.join(',')}))` : `project = "${key}"`;
     });
-    const scope = clauses.length === 1 ? clauses[0] : `(${clauses.join(' OR ')})`;
+    // Interlock's own replay work items are evidence of the route, not of the site's data: left out
+    const scope = `${clauses.length === 1 ? clauses[0] : `(${clauses.join(' OR ')})`}${notOurs}`;
     jobs.push({ r, kinds, scope });
   }
   await pool(jobs, 6, async ({ r, kinds, scope }) => {
@@ -185,13 +200,18 @@ export async function recordProof(report, by) {
       for (const f of old.findings) if (!now.has(f.key)) changes.push({ kind: 'fixed', workflow: old.name, title: f.title, subject: f.subject });
     }
   }
-  // the snapshot is written first, so a failure later can never leave the watch diffing an old proof
-  if (!report.unreadableScreens) await kvs.set('watch:snapshot', snap);
+  // the snapshot is written first, so a failure later can never leave the watch diffing an old proof; on a
+  // site so large its findings exceed one storage value (240 KiB), the snapshot is dropped and the next
+  // proof starts afresh rather than failing every day
+  if (!report.unreadableScreens) {
+    if (Buffer.byteLength(JSON.stringify(snap)) < 230000) await kvs.set('watch:snapshot', snap);
+    else await kvs.delete('watch:snapshot');
+  }
   // KVS values are capped at 240 KiB; history keeps the newest entries that fit in about 150 KB
   let history = (await kvs.get('watch:history')) || [];
   if (changes.length) history.unshift({ at, by, changes: changes.slice(0, 50) });
   history = history.slice(0, 60);
-  while (history.length > 1 && JSON.stringify(history).length > 150000) history.pop();
+  while (history.length > 1 && Buffer.byteLength(JSON.stringify(history)) > 150000) history.pop();
   await kvs.set('watch:history', history);
   const last = { at, by, workflows: report.results.length, withFindings: report.results.filter((r) => r.findings.length).length, unreadableScreens: report.unreadableScreens || 0 };
   await kvs.set('watch:last', last);
@@ -212,6 +232,7 @@ const intendedKey = (workflowId, property, subject) => `${workflowId}|${property
 // count the status changes that brought each one into its current state, with what happened to the
 // resolution on the way. This ties Jira's data back to the route the proof found.
 resolver.define('traceItems', async (req) => {
+  await requireAdmin();
   const { jql, flagged = [], since = null } = req.payload;
   const res = await jira(route`/rest/api/3/search/jql`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -221,9 +242,14 @@ resolver.define('traceItems', async (req) => {
   const issues = await pool(res.issues || [], 6, async (issue) => {
     const c = issue.changelog || {};
     if ((c.total || 0) <= (c.histories || []).length) return { key: issue.key, histories: c.histories || [] };
-    const startAt = Math.max(0, c.total - 100);
-    const full = await jira(route`/rest/api/3/issue/${issue.key}/changelog?startAt=${startAt}&maxResults=100`).catch(() => null);
-    return { key: issue.key, histories: full?.values || c.histories || [] };
+    // newest page first, then older pages until one holds a status change (at most 5 pages)
+    const histories = [];
+    for (let startAt = Math.max(0, c.total - 100), n = 0; n < 5; n++, startAt = Math.max(0, startAt - 100)) {
+      const page = await jira(route`/rest/api/3/issue/${issue.key}/changelog?startAt=${startAt}&maxResults=100`).catch(() => null);
+      histories.push(...(page?.values || []));
+      if (!page || startAt === 0 || (page.values || []).some((h) => h.items.some((i) => i.field === 'status'))) break;
+    }
+    return { key: issue.key, histories: histories.length ? histories : c.histories || [] };
   });
   return waysOf(issues, flagged, since);
 });
@@ -251,9 +277,13 @@ resolver.define('markIntended', async (req) => {
   return { intended: all };
 });
 
-resolver.define('watchStatus', async () => ({ last: await kvs.get('watch:last'), history: ((await kvs.get('watch:history')) || []).slice(0, 10) }));
+resolver.define('watchStatus', async () => {
+  await requireAdmin();
+  return { last: await kvs.get('watch:last'), history: ((await kvs.get('watch:history')) || []).slice(0, 10) };
+});
 
 resolver.define('checkSite', async (req) => {
+  await requireAdmin();
   const site = await loadSite({ fresh: !!req.payload?.fresh });
   // the proof comes back first; live counts follow in a second call (measureSite) so the page paints fast
   // the team's own rules ("Done only through Code Review") are kept in app storage, so the page and the
@@ -264,10 +294,8 @@ resolver.define('checkSite', async (req) => {
   report.watch = await recordProof(report, req.context.accountId).catch(() => null);
   report.intended = (await kvs.get('intended').catch(() => null)) || {};
   report.fixes = (await kvs.get('fixes').catch(() => null)) || {};
-  // a compact line per workflow with findings, so a proof can be audited from the app's logs
-  console.log('INTERLOCK_REPORT ' + JSON.stringify(report.results.filter((r) => r.findings.length).map((r) => ({
-    w: r.workflow.name, p: [...new Set(r.usage.map((u) => u.project))], f: r.findings.map((f) => `${f.property}:${f.subject || ''}`),
-  }))));
+  // one line of counts per proof in the app logs (no workflow or project names leave in logs)
+  console.log(`INTERLOCK_REPORT ${JSON.stringify({ workflows: report.results.length, withFindings: report.results.filter((r) => r.findings.length).length, findings: report.results.reduce((n, r) => n + r.findings.length, 0) })}`);
   // the UI draws each workflow, so it gets the models too (statuses and transitions only)
   const statuses = new Map(Object.entries(site.statuses));
   report.models = Object.fromEntries(site.workflows.map((w) => [w.id, buildModel(w, statuses, { screenHasResolution: new Set(site.screenHasResolution) })]));
@@ -277,6 +305,7 @@ resolver.define('checkSite', async (req) => {
 
 // Count the work items already in each bad state, for the workflows that have resolution findings.
 resolver.define('measureSite', async (req) => {
+  await requireAdmin();
   const site = await loadSite();
   const report = await measure(site, checkSite(site));
   return Object.fromEntries(report.results.filter((r) => r.observed || r.observedError).map((r) => [r.workflow.id, { observed: r.observed, observedError: r.observedError }]));
@@ -285,6 +314,7 @@ resolver.define('measureSite', async (req) => {
 // Replay a finding's route on a new work item: create it where the workflow is used, run each
 // transition through Jira, and read back status and resolution after every step.
 resolver.define('replay', async (req) => {
+  await requireAdmin();
   const { project, projectId, issueType, hops, label, startName, workflow } = req.payload;
   let type = issueType;
   if (!type) {
@@ -347,6 +377,7 @@ resolver.define('replay', async (req) => {
 // Remove a replay work item when the admin is done with it. Only items Interlock created (label and
 // summary both match) can be deleted this way, and only with the admin's own delete permission.
 resolver.define('deleteReplay', async (req) => {
+  await requireAdmin();
   const key = String(req.payload.key || '');
   if (!/^[A-Z][A-Z0-9_]+-\d+$/.test(key)) throw new Error('Not a work item key');
   const i = await jira(route`/rest/api/3/issue/${key}?fields=summary`);
@@ -397,6 +428,7 @@ const SHIP_ROUTES = {
 };
 
 resolver.define('demoSetup', async (req) => {
+  await requireAdmin();
   const me = await jira(route`/rest/api/3/myself`);
   // 1. the workflow (reuse it if it already exists)
   const existing = await jira(route`/rest/api/3/workflows/search?queryString=${SHIP_WF}`);
@@ -447,6 +479,7 @@ resolver.define('demoSetup', async (req) => {
 
 // Move a few demo tickets along their routes (called in small batches to stay inside Forge's time limit).
 resolver.define('demoMove', async (req) => {
+  await requireAdmin();
   for (const { key, route: steps } of req.payload.moves) {
     for (const name of steps) {
       const avail = await jira(route`/rest/api/3/issue/${key}/transitions`);
@@ -485,8 +518,14 @@ async function screenAsksResolution(screenId) {
 
 const RES_ACTION = (a) => a.ruleKey === 'system:update-field' && a.parameters?.field === 'resolution';
 
+// Fixes are kept one per workflow, property and status, with each changed transition's actions before and
+// after, so Undo puts back exactly what was there, and refuses if someone has edited those transitions since.
+const fixKey = (workflowId, property, status) => `${workflowId}|${property}|${status}`;
 resolver.define('fix', async (req) => {
-  const { workflowId, property, status, mode, before: undoBefore } = req.payload;
+  await requireAdmin();
+  const { workflowId, property, status, mode } = req.payload;
+  const fixes = (await kvs.get('fixes')) || {};
+  const record = fixes[fixKey(workflowId, property, status)];
   const got = await jira(route`/rest/api/3/workflows`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workflowIds: [workflowId] }) });
   const wf = got.workflows?.[0];
   if (!wf) throw new Error('Workflow not found');
@@ -497,9 +536,11 @@ resolver.define('fix', async (req) => {
   let resolutionName = null;
   const before = {}; // each changed transition's actions before the fix, so Undo can put them back exactly
   if (mode === 'undo') {
+    if (!record) throw new Error('Interlock has no record of this fix, so it cannot take it back.');
     for (const t of wf.transitions) {
-      if (!undoBefore || !(t.id in undoBefore) || t.toStatusReference !== status) continue;
-      t.actions = undoBefore[t.id];
+      if (!(t.id in record.before)) continue;
+      if (record.after && JSON.stringify(t.actions || []) !== JSON.stringify(record.after[t.id])) throw new Error(`"${t.name}" has been edited since Interlock fixed it, so Undo would overwrite that edit. Change it back in the workflow editor instead.`);
+      t.actions = record.before[t.id];
       changed.push(t.name);
     }
   } else if (property === 'doneUnresolved') {
@@ -531,15 +572,19 @@ resolver.define('fix', async (req) => {
   if (!changed.length) return { changed, note: property === 'openResolved'
     ? 'Nothing to change: every transition back to this status from a done status already clears the resolution.'
     : 'Nothing to change: every transition into this status already sets the resolution or asks the person for one.' };
-  const statuses = st.map((s) => ({ id: s.id, name: s.name, statusCategory: s.statusCategory, statusReference: s.id }));
+  // statuses go back with their descriptions, or the update would blank them site-wide
+  const statuses = st.map((s) => ({ id: s.id, name: s.name, description: s.description || '', statusCategory: s.statusCategory, statusReference: s.id }));
   const update = { statuses, workflows: [{ id: wf.id, version: wf.version, name: wf.name, description: wf.description, statuses: wf.statuses, transitions: wf.transitions, startPointLayout: wf.startPointLayout }] };
   const validation = await jira(route`/rest/api/3/workflows/update/validation`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ payload: update }) });
   if (validation.errors?.length) return { changed, resolutionName, valid: false, errors: validation.errors.map((e) => e.message || JSON.stringify(e)) };
   if (mode !== 'apply' && mode !== 'undo') return { changed, resolutionName, valid: true };
   await jira(route`/rest/api/3/workflows/update`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(update) });
-  const fixes = (await kvs.get('fixes')) || {};
-  if (mode === 'undo') delete fixes[workflowId];
-  else fixes[workflowId] = { property, status, before, transitions: changed, at: new Date().toISOString(), name: wf.name };
+  const k = fixKey(workflowId, property, status);
+  if (mode === 'undo') delete fixes[k];
+  else {
+    const after = Object.fromEntries(wf.transitions.filter((t) => t.id in before).map((t) => [t.id, t.actions]));
+    fixes[k] = { workflowId, property, status, statusName: st.find((s) => s.id === status)?.name, before, after, transitions: changed, at: new Date().toISOString(), name: wf.name };
+  }
   await kvs.set('fixes', fixes);
   return { changed, resolutionName, valid: true, applied: true, before };
 });

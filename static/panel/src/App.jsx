@@ -23,7 +23,7 @@ export default function App() {
   const [frozen, setFrozen] = useState(null);
 
   const run = (fresh = false) => {
-    setReport(null); setError(null); setFrozen(null); setTouched(false); setRankedWithCounts(false);
+    setReport(null); setError(null); setFrozen(null); setTouched(false); setRankedWithCounts(false); setFocus(null); setNotice(null);
     invoke('checkSite', { fresh }).then((r) => {
       setReport(r);
       setMeasuring(true);
@@ -44,17 +44,21 @@ export default function App() {
     if (w) { setSelId(w.workflow.id); setPendingSelect(null); }
   }, [pendingSelect, report]);
   const recheck = async (msg, undo = null) => {
-    const r = await invoke('checkSite', {});
-    setReport(r); setFocus(null); setNotice(msg ? { msg, undo } : null);
+    // the notice comes first: a change already saved in Jira is reported even if proving the site again fails
+    setNotice(msg ? { msg, undo } : null);
+    let r;
+    try { r = await invoke('checkSite', {}); }
+    catch (e) { setNotice({ msg: `${msg || ''} Proving the site again failed (${e.message || e}); select Check again.`, undo }); return; }
+    setReport(r); setFocus(null);
     setMeasuring(true);
     invoke('measureSite', {}).then((m) => setReport((cur) => cur && withCounts(cur, m))).catch(() => {}).finally(() => setMeasuring(false));
   };
 
   // re-check the selected workflow in the browser whenever its rules change
   const [intended, setIntended] = useState({});
-  useEffect(() => { if (report?.intended) setIntended(report.intended); }, [report]);
+  useEffect(() => { if (report?.intended) setIntended(report.intended); }, [report?.checkedAt]); // eslint-disable-line react-hooks/exhaustive-deps
   // rules come from app storage with the proof, and every change is saved back
-  useEffect(() => { if (report?.rules) setRules(report.rules); }, [report]);
+  useEffect(() => { if (report?.rules) setRules(report.rules); }, [report?.checkedAt]); // eslint-disable-line react-hooks/exhaustive-deps
   const results = useMemo(() => {
     if (!report) return [];
     return report.results.map((r) => {
@@ -87,13 +91,14 @@ export default function App() {
   if (error) return <div className="il-empty"><h1>Interlock could not read this site's workflows</h1><p>{error}</p><p>Interlock needs a Jira administrator to open it, because workflows are site configuration.</p><button className="il-btn" onClick={() => run(true)}>Check again</button></div>;
   if (!report) return <Boot />;
 
+  if (!results.length) return <div className="il-empty"><h1>No workflows to check</h1><p>Jira returned no workflows for this site. Interlock checks company-managed and team-managed workflows that a Jira administrator can read.</p><button className="il-btn" onClick={() => run(true)}>Check again</button></div>;
   const sel = results.find((r) => r.workflow.id === selId) || results[0];
   const model = { ...report.models[sel.workflow.id], teamManaged: sel.teamManaged };
   const totals = summarise(results);
   const liveOf = (r) => Object.values(r.observed || {}).reduce((b, o) => b + o.bad, 0);
   const ranked = [...results].sort((a, b) => liveOf(b) - liveOf(a) || b.findings.length - a.findings.length || a.workflow.name.localeCompare(b.workflow.name));
   const list = (frozen ? [...results].sort((a, b) => (frozen.indexOf(a.workflow.id) + 1 || 1e9) - (frozen.indexOf(b.workflow.id) + 1 || 1e9)) : ranked)
-    .filter((r) => filter === 'all' || r.findings.length);
+    .filter((r) => filter === 'all' || !totals.withFindings || r.findings.length);
 
   return (
     <div className="il-app">
@@ -118,19 +123,19 @@ export default function App() {
       <Watch stamp={report.checkedAt} />
       <div className="il-body">
         <nav className="il-levers" aria-label="Workflows">
-          <div className="il-filter" role="tablist">
-            <button role="tab" aria-selected={filter === 'findings'} className={filter === 'findings' ? 'on' : ''} onClick={() => setFilter('findings')}>With findings <span>{totals.withFindings}</span></button>
-            <button role="tab" aria-selected={filter === 'all'} className={filter === 'all' ? 'on' : ''} onClick={() => setFilter('all')}>All <span>{results.length}</span></button>
+          <div className="il-filter" role="group" aria-label="Show">
+            <button aria-pressed={filter === 'findings'} className={filter === 'findings' ? 'on' : ''} onClick={() => setFilter('findings')}>With findings <span>{totals.withFindings}</span></button>
+            <button aria-pressed={filter === 'all'} className={filter === 'all' ? 'on' : ''} onClick={() => setFilter('all')}>All <span>{results.length}</span></button>
           </div>
           {!results.some((r) => r.workflow.name === 'Ship: Software delivery workflow') && <Demo onDone={async (msg) => { await recheck(msg); setSelId((id) => id); setPendingSelect('Ship: Software delivery workflow'); }} />}
-          <p className="il-lever-key" aria-hidden="true"><span className="live">12</span> work items already wrong <span><Lamp state="red" />3</span> findings</p>
+          <p className="il-lever-key" aria-hidden="true"><span className="live">n</span> work items already wrong <span><Lamp state="red" />n</span> findings</p>
           <ul>
             {list.map((r) => (
               <li key={r.workflow.id}>
-                <button className={`il-lever ${r.workflow.id === sel.workflow.id ? 'pulled' : ''}`} onClick={() => { setSelId(r.workflow.id); setFocus(null); setTouched(true); if (!frozen) setFrozen(ranked.map((x) => x.workflow.id)); }}>
+                <button aria-current={r.workflow.id === sel.workflow.id ? 'true' : undefined} className={`il-lever ${r.workflow.id === sel.workflow.id ? 'pulled' : ''}`} onClick={() => { setSelId(r.workflow.id); setFocus(null); setTouched(true); if (!frozen) setFrozen(ranked.map((x) => x.workflow.id)); }}>
                   <span className="handle" aria-hidden="true" />
                   <LeverName name={r.workflow.name} />
-                  <span className="count">{liveOf(r) ? <span className="live" title={`${liveOf(r)} work items already in a wrong state`}>{liveOf(r)}</span> : null}{r.findings.length ? <span title={`${r.findings.length} ${r.findings.length === 1 ? 'finding' : 'findings'}`}><Lamp state="red" />{r.findings.length}</span> : <Lamp state="green" />}</span>
+                  <span className="count">{liveOf(r) ? <span className="live" title={`${liveOf(r)} work items already in a wrong state`}>{liveOf(r)}<span className="sr"> work items already wrong,</span></span> : null}{r.findings.length ? <span title={`${r.findings.length} ${r.findings.length === 1 ? 'finding' : 'findings'}`}><Lamp state="red" />{r.findings.length}<span className="sr"> {r.findings.length === 1 ? 'finding' : 'findings'}</span></span> : <><Lamp state="green" /><span className="sr">no findings</span></>}</span>
                 </button>
               </li>
             ))}
@@ -139,13 +144,13 @@ export default function App() {
         <main className="il-main">
           <Diagram key={sel.workflow.id} model={model} result={sel} focus={focus} />
         </main>
-        <Table result={sel} model={model} focus={focus} setFocus={setFocus} replays={replays} setReplays={setReplays} onFixed={recheck} onIntended={markIntended}
-          lastFix={report.fixes?.[sel.workflow.id]} onUndoFix={async (fx) => {
+        <Table key={sel.workflow.id} result={sel} model={model} focus={focus} setFocus={setFocus} replays={replays} setReplays={setReplays} onFixed={recheck} onIntended={markIntended}
+          fixes={Object.values(report.fixes || {}).filter((x) => x.workflowId === sel.workflow.id)} onUndoFix={async (fx) => {
             setNotice({ msg: 'Taking the fix back and proving the site again…' });
-            try { await invoke('fix', { workflowId: sel.workflow.id, property: fx.property, status: fx.status, before: fx.before, mode: 'undo' }); await recheck(`Undone: ${fx.transitions.join(', ')} in ${fx.name} are back as they were.`); }
+            try { await invoke('fix', { workflowId: sel.workflow.id, property: fx.property, status: fx.status, mode: 'undo' }); await recheck(`Undone: ${fx.transitions.join(', ')} in ${fx.name} are back as they were.`); }
             catch (e) { setNotice({ msg: 'Could not undo the fix: ' + (e.message || e) }); }
           }}
-          rules={rules[sel.workflow.id] || []} setRules={(r) => { setRules((x) => ({ ...x, [sel.workflow.id]: r })); invoke('saveRules', { workflowId: sel.workflow.id, rules: r }).catch(() => {}); }} />
+          rules={rules[sel.workflow.id] || []} setRules={(r) => { setRules((x) => ({ ...x, [sel.workflow.id]: r })); invoke('saveRules', { workflowId: sel.workflow.id, rules: r }).catch((e) => setNotice({ msg: 'The rule is proved here but was not saved: ' + (e.message || e) })); }} />
       </div>
     </div>
   );
@@ -190,11 +195,16 @@ function Diagram({ model, result, focus }) {
   // measure the frame, then draw the workflow left to right or top to bottom, whichever comes out larger
   const [frame, setFrame] = useState(null);
   const observer = useRef(null);
+  // the whole workflow fits the frame by default; zooming in lets the frame scroll
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
+  zoomRef.current = zoom;
   // a callback ref, so the frame is measured whenever the wrapper is (re)attached
   const wrapRef = useCallback((el) => {
     observer.current?.disconnect();
     if (!el || typeof ResizeObserver === 'undefined') return;
-    observer.current = new ResizeObserver(([e]) => setFrame((f) => {
+    // (only measured at fit: zooming in grows the frame, and must not turn the diagram round)
+    observer.current = new ResizeObserver(([e]) => zoomRef.current === 1 && setFrame((f) => {
       const w = Math.round(e.contentRect.width), h = Math.round(e.contentRect.height);
       return f && f.w === w && f.h === h ? f : { w, h };
     }));
@@ -217,8 +227,6 @@ function Diagram({ model, result, focus }) {
   const routeKey = new Set(route.map((h) => `${h.transitionId}:${h.from}`));
   const onRoute = new Set(route.length ? [model.initial, ...route.flatMap((h) => [h.from, h.to])] : []);
   const trainRef = useRef(null), pathRefs = useRef({});
-  // the whole workflow fits the frame by default; zooming in lets the frame scroll
-  const [zoom, setZoom] = useState(1);
 
   // run a lit train along the focused route, hop by hop
   useEffect(() => {
@@ -293,7 +301,7 @@ function Diagram({ model, result, focus }) {
             </g>
           );
         })}
-        {route.length > 0 && <g ref={trainRef} className="il-train"><circle r="9" /><circle r="4" className="core" /></g>}
+        {route.length > 0 && !reduceMotion && <g ref={trainRef} className="il-train"><circle r="9" /><circle r="4" className="core" /></g>}
       </svg>
       <Legend teamManaged={result.teamManaged} />
     </div>
@@ -321,7 +329,9 @@ function Legend({ teamManaged }) {
 }
 
 // ---------- the interlocking table ----------
-function Table({ result, model, focus, setFocus, replays, setReplays, rules, setRules, onFixed, onIntended, lastFix, onUndoFix }) {
+function Table({ result, model, focus, setFocus, replays, setReplays, rules, setRules, onFixed, onIntended, fixes = [], onUndoFix }) {
+  // the fix (if any) Interlock applied for one of these findings' statuses
+  const fixFor = (property, statuses) => fixes.find((x) => x.property === property && statuses.includes(x.status));
   const usage = result.usage.find((u) => u.project);
   async function replay(f) {
     const k = `${result.workflow.id}:${f.id}`;
@@ -344,15 +354,15 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
           const verdict = rp?.status === 'done' ? verdictOf(f, rp) : null;
           return (
             <li key={property} className={`il-finding ${active ? 'on' : ''} ${verdict?.confirmed ? 'confirmed' : ''}`}>
-              <button className="il-finding-main" onClick={() => setFocus(active ? null : list[0])}>
+              <button className="il-finding-main" aria-expanded={!!active} onClick={() => setFocus(active ? null : list[0])}>
                 <Lamp state={property === 'unreachable' ? 'amber' : 'red'} />
                 <span><b>{f.title}</b>{list.length === 1 ? f.subject : `${list.length} statuses`}</span>
               </button>
-              <Tiers f={f} obs={result.observed?.[property]} verdict={verdict} />
-              <Evidence obs={result.observed?.[property]} property={property} flagged={list.map((x) => x.subject)} fixAt={lastFix?.at} />
+              <Tiers f={f} obs={result.observed?.[property]} statuses={list.map((x) => x.subject)} verdict={verdict} />
+              <Evidence obs={result.observed?.[property]} property={property} flagged={list.map((x) => x.subject)} fixAt={fixFor(property, list.map((x) => x.status))?.at} />
               {list.length > 1 && (
                 <div className="il-chips" role="group" aria-label={f.title}>
-                  {list.map((x) => <button key={x.id} className={focus?.id === x.id ? 'on' : ''} onClick={() => setFocus(focus?.id === x.id ? null : x)}>{x.subject}</button>)}
+                  {list.map((x) => <button key={x.id} aria-pressed={focus?.id === x.id} className={focus?.id === x.id ? 'on' : ''} onClick={() => setFocus(focus?.id === x.id ? null : x)}>{x.subject}</button>)}
                 </div>
               )}
               {active && (
@@ -396,9 +406,9 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
           );
         })}
       </ol>
-      {lastFix && (
-        <p className="il-lastfix">Interlock changed this workflow on {new Date(lastFix.at).toLocaleDateString()}: {lastFix.transitions.join(', ')}. <button className="il-link" onClick={() => onUndoFix(lastFix)}>Undo that fix</button></p>
-      )}
+      {fixes.map((fx) => (
+        <p key={`${fx.property}${fx.status}`} className="il-lastfix">Interlock changed this workflow on {new Date(fx.at).toLocaleDateString()} ({fx.statusName || 'one status'}): {fx.transitions.join(', ')}. <button className="il-link" onClick={() => onUndoFix(fx)}>Undo that fix</button></p>
+      ))}
       {result.intended?.length > 0 && (
         <section className="il-intended">
           <h3>Recorded as intended</h3>
@@ -413,18 +423,20 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
           </ul>
         </section>
       )}
-      <Rules model={model} rules={rules} setRules={setRules} />
+      <Rules key={result.workflow.id} model={model} rules={rules} setRules={setRules} />
     </aside>
   );
 }
 
 // How far a finding has been taken, like a signal with three aspects: the proof says the route exists,
 // Jira's data says work items are already there, and a replay walked a real work item down the route.
-function Tiers({ f, obs, verdict }) {
+function Tiers({ f, obs, statuses, verdict }) {
   const counted = f.property === 'doneUnresolved' || f.property === 'openResolved';
+  // lit only for items in this finding's own statuses (when Jira's count per status is known)
+  const own = obs?.byStatus ? statuses.reduce((n, s) => n + (obs.byStatus[s] || 0), 0) : obs?.bad || 0;
   const tiers = [
     { label: 'Proved', on: true, why: 'The model checker found this route among every reachable state.' },
-    { label: 'In your data', on: obs?.bad > 0, na: !counted, why: counted ? 'Work items in the projects using this workflow are already in this state.' : 'Jira data cannot show this kind of finding; replay the route instead.' },
+    { label: 'In your data', on: own > 0, na: !counted, why: counted ? 'Work items in the statuses this finding is about are already in this state.' : 'Jira data cannot show this kind of finding; replay the route instead.' },
     { label: 'Replayed', on: !!verdict?.confirmed, na: !f.route, why: 'A new work item followed the route through Jira itself.' },
   ];
   return (
@@ -452,11 +464,11 @@ function Evidence({ obs, property, flagged, fixAt }) {
     return (
       <div className="il-evidence now">
         <p>Happening now: {obs.bad.toLocaleString()} of {obs.of.toLocaleString()} {obs.bad === 1 ? noun[0] : noun[1]}. <button className="il-link" onClick={() => openPath(link)}>Show them</button>
-          {' '}{!trace && <button className="il-link" onClick={async () => { setTrace('loading'); try { setTrace(await invoke('traceItems', { jql: obs.jql, flagged, since: fixAt })); } catch (e) { setTrace({ error: e.message }); } }}>How did they get there?</button>}</p>
+          {' '}{!trace && <button className="il-link trace" onClick={async () => { setTrace('loading'); try { setTrace(await invoke('traceItems', { jql: obs.jql, flagged, since: fixAt })); } catch (e) { setTrace({ error: e.message }); } }}>How did they get there?</button>}</p>
         {(byStatus.length > 0 || elsewhere > 0) && (
           <p className="il-bystatus">
             {byStatus.map(([s, n]) => <span key={s}><b>{n.toLocaleString()}</b> in {s}</span>)}
-            {elsewhere > 0 && <span className="other"><b>{elsewhere.toLocaleString()}</b> in statuses no route reaches today{fixAt ? ', so they got there before the fix' : ': the workflow changed since, or something else put them there'}. Read their history to see which.</span>}
+            {elsewhere > 0 && <span className="other"><b>{elsewhere.toLocaleString()}</b> in statuses no route leaves {property === 'doneUnresolved' ? 'unresolved' : 'resolved'} today: the workflow has changed since{fixAt ? ` (Interlock fixed it on ${new Date(fixAt).toLocaleDateString()})` : ', or something else put them there'}. Their history says which.</span>}
           </p>
         )}
         {trace === 'loading' && <p className="il-trace">Reading their history…</p>}
@@ -513,6 +525,7 @@ function Fix({ f, result, onFixed }) {
     try {
       const r = await invoke('fix', { workflowId: result.workflow.id, property: f.property, status: f.status, mode });
       if (mode === 'apply' && r.applied) {
+        // the change is saved in Jira now; if proving the site again fails, say so without calling the fix failed
         await onFixed(`Fixed and proved again: ${result.workflow.name} now ${f.property === 'doneUnresolved' ? `sets a resolution on every route into ${f.subject}` : `clears the resolution on every route back to ${f.subject}`}.`,
           { workflowId: result.workflow.id, property: f.property, status: f.status, transitions: r.changed, before: r.before, name: result.workflow.name });
         return;
@@ -598,7 +611,7 @@ function Rules({ model, rules, setRules }) {
         <span>Work reaches</span>
         <select value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Target status">
           <option value="">a status…</option>
-          {[...done, ...model.statuses.filter((s) => s.category !== 'DONE')].map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          {[...done, ...model.statuses.filter((s) => s.category !== 'DONE')].filter((s) => s.id !== model.initial).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
         <span>only through</span>
         <select value={via} onChange={(e) => setVia(e.target.value)} aria-label="Required status">

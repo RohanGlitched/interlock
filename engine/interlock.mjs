@@ -195,7 +195,8 @@ export function check(model, { mustPass = [] } = {}) {
   // Approvals: when a workflow has approval steps, every route to a successful outcome must pass one.
   // Done statuses that name a negative outcome (cancelled, declined, rejected...) may be reached without one.
   const approvals = new Set(model.statuses.filter((s) => s.approval).map((s) => s.id));
-  if (approvals.size && !approvals.has(model.initial)) {
+  // (an approval step can be where work starts: leaving it by anything but its approve transition is still a skip)
+  if (approvals.size) {
     const unapproved = exploreApproval(model, approvals);
     for (const s of model.statuses) {
       if (s.category !== 'DONE' || NEGATIVE.test(s.name)) continue;

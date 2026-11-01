@@ -4,7 +4,7 @@
 
 A Jira workflow is a small program. Teams rely on it for promises such as *"nothing is done without code review"*, *"done work is resolved"* and *"nothing gets stuck"*, and Jira itself never checks those promises. A global transition added for a hotfix, a status copied from another project, or a transition screen without the Resolution field quietly breaks them. Dashboards then count finished work as unresolved, or reopened work as resolved, and release reports are wrong.
 
-Railway signal boxes solved this a century ago with interlocking: the frame physically prevents a lever combination that would set conflicting routes. Interlock brings the same idea to Jira. Instead of testing a few example tickets, it works through every situation a work item can ever be in, meaning each status combined with whether the resolution is set, and checks each promise against all of them. That kind of exhaustive check is called model checking.
+Railway signal boxes solved this a century ago with interlocking: the frame physically prevents a lever combination that would set conflicting routes. Interlock brings the same idea to Jira. Instead of testing a few example work items, it works through every situation a work item can ever be in, meaning each status combined with whether the resolution is set, and checks each promise against all of them. That kind of exhaustive check is called model checking.
 
 It is for Jira administrators and the teams who rely on Jira's numbers: service desks reporting SLAs and change volumes, software teams with review rules, anyone whose release report counts resolved work.
 
@@ -35,7 +35,7 @@ Then **fix at the cause**: for resolution findings, Interlock adds *Set resoluti
 
 On that demo site (before we added our own Ship and TPL projects), 13 of the 29 workflows with findings are copies of Jira Service Management template workflows; the Change Management copy appears in six projects with the same five findings, and one was confirmed on a real work item: a declined change sent back to Review stays resolved as Declined. A project created from the same template today does not have that route, so these copies come from an earlier version of the template or were edited after they were made. Either way, nothing in Jira tells an admin which workflows still carry such routes; Interlock does. The full list is in [Resolution defects in template-made workflows](docs/atlassian-templates.md).
 
-**On public Jira sites** the same counts are visible to anyone: 1,844 done-but-unresolved and 1,239 open-but-resolved items on Apache's Jira, 1,092 done-but-unresolved on Atlassian's own public tracker, and zero on OpenJDK's. Their public history shows how they got there: on Apache, 759 of the done-but-unresolved items were moved there by 115 different people over 353 days, through transitions that never set a resolution (MXNET's In Review → Done alone, 204 times). We also say which clusters were one-off bulk or system changes rather than routes. See [Resolution defects on public Jira sites](docs/public-jira.md).
+**On public Jira sites** the same counts are visible to anyone: 1,844 done-but-unresolved and 1,239 open-but-resolved items on Apache's Jira, 1,092 done-but-unresolved on Atlassian's own public tracker, and zero on OpenJDK's. Their public history shows how they got there: on Apache, 759 of the done-but-unresolved items were moved there by 114 different people on 348 days, through transitions that never set a resolution (MXNET's In Review → Done alone, 204 times). We also say which clusters were one-off bulk or system changes rather than routes. See [Resolution defects on public Jira sites](docs/public-jira.md).
 
 ## In Jira
 
@@ -46,7 +46,7 @@ On that demo site (before we added our own Ship and TPL projects), 13 of the 29 
 - The interlocking table lists the findings with their routes, evidence lamps, replay and fix.
 - You can write a rule ("work reaches Done only through Code Review") and Interlock proves or refutes it over every route at once, in the browser.
 
-On a site with no software project, **Add the Ship demo project** builds a seeded demo: a delivery workflow with the shortcuts teams add over time, and 20 tickets moved along real routes. Half of its 12 done tickets end up unresolved, and the rule *Done only through Code Review* is refuted with the exact route. The demo shows the mechanics; the evidence from real configurations is the [template report](docs/atlassian-templates.md).
+On a site with no software project, **Add the Ship demo project** builds a seeded demo: a delivery workflow with the shortcuts teams add over time, and 20 work items moved along real routes. Half of its 12 done work items end up unresolved, and the rule *Done only through Code Review* is refuted with the exact route. The demo shows the mechanics; the evidence from real configurations is the [template report](docs/atlassian-templates.md).
 
 **The daily watch** proves every workflow again once a day and compares each proof with the one before, so a workflow edit that opens a bad route shows up as a new finding with the date it appeared.
 
@@ -72,7 +72,7 @@ Interlock is for Jira administrators, because workflows are site configuration.
 | `manage:jira-configuration` | read workflows and statuses; validate and apply a fix |
 | `manage:jira-project` | read transition screens (to see which ones set the resolution) and workflow schemes; create the demo project |
 | `read:jira-work` | count work items already in a bad state; read transitions during a replay |
-| `write:jira-work` | create and move the replay work item and the demo tickets |
+| `write:jira-work` | create and move the replay work item and the demo work items |
 | `read:jira-user` | read the current user when building the demo project |
 
 Interlock changes a workflow only when an admin clicks **Apply** on a fix that Jira has already validated.

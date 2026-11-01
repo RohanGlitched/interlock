@@ -97,6 +97,15 @@ test('declining at the approval step and coming back later is not an approval', 
   assert.deepEqual(f.map((x) => x.subject), ['Done']);
 });
 
+test('work that starts at the approval step can still skip it', () => {
+  const st = new Map([...statuses, ['6', { name: 'Awaiting approval', category: 'IN_PROGRESS' }], ['7', { name: 'Declined', category: 'DONE' }]]);
+  const w = (extra) => ({ id: 'w', name: 'W', statuses: [{ statusReference: '6', properties: { 'approval.groups': 'cab', 'approval.transition.approved': '2' } }, { statusReference: '4' }, { statusReference: '7' }],
+    transitions: [{ id: '0', type: 'INITIAL', toStatusReference: '6' }, tr('2', 'Approve', ['6'], '4', { actions: setRes }), tr('3', 'Decline', ['6'], '7', { actions: setRes }), ...extra] });
+  assert.deepEqual(verify(w([]), st).findings.filter((f) => f.property === 'approvalSkipped'), []);
+  const f = verify(w([tr('9', 'Emergency', ['6'], '4', { actions: setRes })]), st).findings.filter((x) => x.property === 'approvalSkipped');
+  assert.deepEqual(f.map((x) => x.route.hops.map((h) => h.transition).join()), ['Emergency']);
+});
+
 // ---------- the history trace ----------
 import { lastStatusChange, waysOf } from '../engine/trace.mjs';
 const h = (created, ...items) => ({ created, items });
