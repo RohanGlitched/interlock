@@ -41,7 +41,11 @@ export default function App() {
   useEffect(() => {
     if (!pendingSelect || !report) return;
     const w = report.results.find((r) => r.workflow.name === pendingSelect);
-    if (w) { setSelId(w.workflow.id); setPendingSelect(null); }
+    if (!w) return;
+    setSelId(w.workflow.id); setPendingSelect(null);
+    // a workflow that was not there before (the Ship demo) goes to the top of the frame, in view
+    setFrozen((f) => (f && !f.includes(w.workflow.id) ? [w.workflow.id, ...f] : f));
+    requestAnimationFrame(() => document.querySelector('.il-lever.pulled')?.scrollIntoView({ block: 'nearest' }));
   }, [pendingSelect, report]);
   const recheck = async (msg, undo = null) => {
     // the notice comes first: a change already saved in Jira is reported even if proving the site again fails

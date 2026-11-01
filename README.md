@@ -46,7 +46,7 @@ On that demo site (before we added our own Ship and TPL projects), 13 of the 29 
 - The interlocking table lists the findings with their routes, evidence lamps, replay and fix.
 - You can write a rule ("work reaches Done only through Code Review") and Interlock proves or refutes it over every route at once, in the browser.
 
-On a site with no software project, **Add the Ship demo project** builds a seeded demo: a delivery workflow with the shortcuts teams add over time, and 20 work items moved along real routes. Half of its 12 done work items end up unresolved, and the rule *Done only through Code Review* is refuted with the exact route. The demo shows the mechanics; the evidence from real configurations is the [template report](docs/atlassian-templates.md).
+On any site without it, **Add the Ship demo project** builds a seeded demo: a delivery workflow with the shortcuts teams add over time, and 20 work items moved along real routes. Half of its 12 done work items end up unresolved, and the rule *Done only through Code Review* is refuted with the exact route. The demo shows the mechanics; the evidence from real configurations is the [template report](docs/atlassian-templates.md).
 
 **The daily watch** proves every workflow again once a day and compares each proof with the one before, so a workflow edit that opens a bad route shows up as a new finding with the date it appeared.
 
@@ -86,7 +86,7 @@ Install Interlock from the link on the Devpost page, as a Jira administrator (wo
 2. Select a workflow, then a finding. The track diagram lights the bad route and a train runs along it. The lamps show how far the finding is proven: proved, seen in your data, replayed.
 3. Select **Replay on a new work item**. Interlock walks a new work item down the route through Jira and reads back the status and resolution after each step. Delete the item afterwards with the button next to it.
 4. On a resolution finding, select **Check the fix with Jira**, then **Apply**. The site is proved again and the lamp turns green. **Undo** puts the workflow back.
-5. Under **Rules for this workflow**, prove a rule such as *work reaches Done only through Code Review*. On a site without a software project, **Add the Ship demo project** first.
+5. Under **Rules for this workflow**, prove a rule such as *work reaches Done only through Code Review*. If the Ship workflow is not on the site yet, **Add the Ship demo project** first.
 6. In Rovo, ask the *Workflow interlock* agent *"Can work in Ship reach Done without passing Code Review?"*
 
 ## Build and deploy

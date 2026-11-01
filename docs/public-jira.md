@@ -45,7 +45,7 @@ Every item's change history is public, so we read it the way Interlock's "How di
 
 This is the pattern Interlock proves from configuration: a transition into a done status that does not set a resolution, used by many people for years, each use adding one more miscounted item.
 
-**Apache, open but still resolved (1,239 items).** This side is mostly not routes: 1,100 of the last steps have no author (BEAM's 637 "Resolved → Triage Needed" and Lucene's 379 are system changes after both projects moved to GitHub Issues in 2022), and 29 items have no status change. The rest were people, and the clearest route among them is the classic one: **a reopen from Closed that keeps the old resolution**, 25 times in GEODE ([GEODE-9489](https://issues.apache.org/jira/browse/GEODE-9489)) and 14 in IGNITE ([IGNITE-7537](https://issues.apache.org/jira/browse/IGNITE-7537)), by 31 different people.
+**Apache, open but still resolved (1,239 items).** This side is mostly not routes: 1,100 of the last steps have no author (BEAM's 637 "Resolved → Triage Needed", and Lucene's 379, 367 of them in 2024, are system changes after both projects moved to GitHub Issues in 2022), and 29 items have no status change. The rest were people, and the clearest route among them is the classic one: **a reopen from Closed that keeps the old resolution**, 25 times in GEODE ([GEODE-9489](https://issues.apache.org/jira/browse/GEODE-9489)) and 14 in IGNITE ([IGNITE-7537](https://issues.apache.org/jira/browse/IGNITE-7537)), by 31 different people.
 
 **Not every count is a route.** Two clusters turned out to be one-off operations, and we say so rather than count them as evidence:
 

@@ -1,7 +1,7 @@
 import Resolver from '@forge/resolver';
 import api, { route, assumeTrustedRoute } from '@forge/api';
 import { kvs } from '@forge/kvs';
-import { verify, buildModel } from '../engine/interlock.mjs';
+import { verify, buildModel, reopenSteps } from '../engine/interlock.mjs';
 import { resolutionFor } from '../engine/resolution.mjs';
 import { waysOf } from '../engine/trace.mjs';
 
@@ -475,15 +475,23 @@ resolver.define('demoSetup', async (req) => {
     await jira(route`/rest/api/3/workflows/create`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   }
   // 2. a scheme that uses it, and 3. a company-managed software project on that scheme
-  const schemes = await jira(route`/rest/api/3/workflowscheme?maxResults=50`);
-  let scheme = schemes.values.find((s) => s.name === 'Ship workflow scheme');
-  if (!scheme) scheme = await jira(route`/rest/api/3/workflowscheme`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Ship workflow scheme', description: 'Created by Interlock for the Ship demo.', defaultWorkflow: SHIP_WF }) });
-  let key = 'SHIP';
-  for (let n = 2; ; n++) {
-    const r = await api.asUser().requestJira(route`/rest/api/3/project/${key}`);
-    if (r.status === 404) break;
-    key = `SHIP${n}`;
+  // read every page of schemes, so a site with more than 50 reuses its Ship scheme instead of making another
+  let scheme = null;
+  for (let at = 0; !scheme && at < 2000; at += 50) {
+    const page = await jira(route`/rest/api/3/workflowscheme?startAt=${at}&maxResults=50`);
+    scheme = (page.values || []).find((s) => s.name === 'Ship workflow scheme');
+    if (page.isLast || !(page.values || []).length) break;
   }
+  if (!scheme) scheme = await jira(route`/rest/api/3/workflowscheme`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Ship workflow scheme', description: 'Created by Interlock for the Ship demo.', defaultWorkflow: SHIP_WF }) });
+  // the first free key: 404 means free, a project we can see (or one hidden from us) means taken, anything else stops
+  let key = null;
+  for (let n = 1; n <= 20 && !key; n++) {
+    const k = n === 1 ? 'SHIP' : `SHIP${n}`;
+    const r = await withRetry(() => api.asUser().requestJira(route`/rest/api/3/project/${k}`));
+    if (r.status === 404) key = k;
+    else if (r.status !== 200 && r.status !== 403) throw new Error(`Jira could not check whether project ${k} exists (${r.status}). Try again in a minute.`);
+  }
+  if (!key) throw new Error('Projects SHIP to SHIP20 already exist. Delete or rename one of the Ship demo projects first.');
   await jira(route`/rest/api/3/project`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
     key, name: key === 'SHIP' ? 'Ship (Interlock demo)' : `Ship ${key.slice(4)} (Interlock demo)`, projectTypeKey: 'software', leadAccountId: me.accountId,
     assigneeType: 'UNASSIGNED', workflowScheme: scheme.id, description: 'Demo project created by Interlock: real tickets moved along real routes of the Ship workflow.',
@@ -585,19 +593,17 @@ resolver.define('fix', async (req) => {
       changed.push(t.name);
     }
   } else if (property === 'openResolved') {
+    // the fix goes on the step where finished work is first reopened, on every route that leads here
+    const steps = new Set(reopenSteps(wf.transitions, cat, status, all).map((t) => t.id));
     for (const t of wf.transitions) {
-      if (t.type === 'INITIAL' || t.toStatusReference !== status) continue;
-      const from = t.type === 'GLOBAL' ? all : (t.links || []).map((l) => l.fromStatusReference);
-      if (!from.some((f) => cat[f] === 'DONE')) continue;
-      const clears = (t.actions || []).some((a) => a.ruleKey === 'system:update-field' && a.parameters?.field === 'resolution' && !a.parameters.value);
-      if (clears) continue;
+      if (!steps.has(t.id)) continue;
       before[t.id] = t.actions || [];
       t.actions = [...(t.actions || []), { ruleKey: 'system:update-field', parameters: { field: 'resolution', value: '', mode: '' } }];
       changed.push(t.name);
     }
   } else throw new Error('Interlock can repair resolution findings automatically; other findings need a person to redesign the workflow.');
   if (!changed.length) return { changed, note: property === 'openResolved'
-    ? 'Nothing to change here: work reaches this status still resolved through an earlier open status. Fix the status that finished work is first reopened to, and this one clears with it.'
+    ? 'Nothing to change: every step that reopens finished work on the way here already clears the resolution.'
     : 'Nothing to change: every transition into this status already sets the resolution or asks the person for one.' };
   // statuses go back with their descriptions, or the update would blank them site-wide
   const statuses = st.map((s) => ({ id: s.id, name: s.name, description: s.description || '', statusCategory: s.statusCategory, statusReference: s.id }));

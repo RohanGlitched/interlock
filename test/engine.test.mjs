@@ -1,7 +1,7 @@
 // Unit tests for the workflow model checker. Run with: npm test
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { verify, buildModel, usableBySomeone } from '../engine/interlock.mjs';
+import { verify, buildModel, usableBySomeone, reopenSteps } from '../engine/interlock.mjs';
 import { resolutionFor } from '../engine/resolution.mjs';
 
 const statuses = new Map([
@@ -154,6 +154,18 @@ test('an unreadable screen into a done status never invents a reopened-but-resol
   const w = wf([tr('1', 'Start', ['1'], '2'), finish, tr('3', 'Reopen', ['4'], '2')], ['1', '2', '4']);
   const props = verify(w, statuses, { unreadableScreens: new Set(['88']) }).findings.map((f) => f.property);
   assert.ok(!props.includes('openResolved'));
+});
+
+test('the reopen fix goes on the step out of done, even when the route reaches the status through another open one', () => {
+  const cat = { 1: 'TODO', 2: 'IN_PROGRESS', 3: 'DONE', 4: 'TODO' };
+  const t = (id, from, to, actions = []) => ({ id, type: 'DIRECTED', links: from.map((f) => ({ fromStatusReference: f })), toStatusReference: to, actions });
+  const clear = [{ ruleKey: 'system:update-field', parameters: { field: 'resolution', value: '' } }];
+  // Done -> Reopened (keeps the resolution) -> In Progress: the finding is on In Progress, the fix on Reopen
+  const ts = [t('a', ['1'], '2'), t('b', ['2'], '3'), t('c', ['3'], '4'), t('d', ['4'], '2')];
+  assert.deepEqual(reopenSteps(ts, cat, '2', ['1', '2', '3', '4']).map((x) => x.id), ['c']);
+  // once Reopen clears the resolution there is nothing left to fix
+  ts[2].actions = clear;
+  assert.deepEqual(reopenSteps(ts, cat, '2', ['1', '2', '3', '4']), []);
 });
 
 // ---------- the history trace ----------

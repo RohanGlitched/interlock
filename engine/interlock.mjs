@@ -274,3 +274,23 @@ export function verify(workflow, statuses, opts = {}) {
   const held = Object.keys(PROPERTIES).filter((p) => p !== 'mustPass' && (p !== 'approvalSkipped' || hasApproval) && !findings.some((f) => f.property === p));
   return { workflow: { id: model.id, name: model.name }, statuses: model.statuses.length, transitions: model.transitions.length, states, findings, held };
 }
+
+// The transitions to fix for a "reopened but still resolved" finding on status `target`: on every route that
+// brings finished work to it with the resolution kept, the step where the work first leaves a done status.
+// transitions: Jira's workflow transitions; cat: status id -> category; all: every status id in the workflow.
+export function reopenSteps(transitions, cat, target, all) {
+  const clears = (t) => (t.actions || []).some((a) => a.ruleKey === 'system:update-field' && a.parameters?.field === 'resolution' && !a.parameters.value);
+  const fromOf = (t) => (t.type === 'GLOBAL' ? all : (t.links || []).map((l) => l.fromStatusReference));
+  // the open statuses from which work still resolved walks on to the target without the resolution being cleared
+  const feeds = new Set([target]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const t of transitions) {
+      if (t.type === 'INITIAL' || !feeds.has(t.toStatusReference) || clears(t)) continue;
+      for (const f of fromOf(t)) if (cat[f] !== 'DONE' && !feeds.has(f)) { feeds.add(f); grew = true; }
+    }
+  }
+  return transitions.filter((t) => t.type !== 'INITIAL' && feeds.has(t.toStatusReference) && cat[t.toStatusReference] !== 'DONE'
+    && fromOf(t).some((f) => cat[f] === 'DONE') && !clears(t)
+    && !(t.actions || []).some((a) => a.ruleKey === 'system:update-field' && a.parameters?.field === 'resolution' && a.parameters.value));
+}
