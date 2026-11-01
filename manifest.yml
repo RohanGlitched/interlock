@@ -91,6 +91,7 @@ permissions:
     - manage:jira-project
     - read:jira-work
     - write:jira-work
+    - read:jira-user
 app:
   runtime:
     name: nodejs24.x

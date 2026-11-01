@@ -152,6 +152,103 @@ resolver.define('replay', async (req) => {
   return { key: created.key, steps };
 });
 
+// ---------- the Ship demo, for empty sites ----------
+// A software delivery workflow with the shortcuts teams add over time: "Close" from any status (skips
+// Code Review and sets no resolution) and "Reopen" (keeps the resolution). Built through the same public
+// APIs an admin would use, then filled with realistic tickets moved along real routes.
+
+const SHIP_WF = 'Ship: Software delivery workflow';
+const SHIP_TICKETS = [
+  ['Checkout: retry failed card payments once before showing an error', 'review'],
+  ['Search: debounce queries typed faster than 150 ms', 'review'],
+  ['Upgrade the payments SDK to 7.2', 'close'],
+  ['Fix flaky test OrderHistorySpec.shows_refunds', 'close'],
+  ['Mobile: dark mode contrast on the receipts screen', 'review'],
+  ['Rate-limit the password reset endpoint', 'review'],
+  ['Remove the legacy coupon service', 'close'],
+  ['Hotfix: cart total ignores free-shipping threshold', 'close'],
+  ['Add an index on orders(customer_id, created_at)', 'review'],
+  ['Log the request id in every API error response', 'reopen'],
+  ['Feature flag: one-click reorder', 'review'],
+  ['Bump Node to 24 in CI images', 'close'],
+  ['Inventory sync drops items with emoji in the SKU name', 'reopen'],
+  ['Accessibility: focus order on the address form', 'progress'],
+  ['Invoice PDF shows the wrong VAT number for EU customers', 'progress'],
+  ['Migrate cron jobs to the job scheduler', 'review-wait'],
+  ['Alert when the refund queue is older than 15 minutes', 'review-wait'],
+  ['Clean up unused S3 buckets', 'close'],
+  ['Customer export times out over 50,000 rows', 'todo'],
+  ['Support Apple Pay on the web checkout', 'todo'],
+];
+const SHIP_ROUTES = {
+  review: ['Start work', 'Ready for review', 'Approve'],
+  close: ['Start work', 'Close'],
+  reopen: ['Start work', 'Ready for review', 'Approve', 'Reopen'],
+  progress: ['Start work'],
+  'review-wait': ['Start work', 'Ready for review'],
+  todo: [],
+};
+
+resolver.define('demoSetup', async (req) => {
+  const me = await jira(route`/rest/api/3/myself`);
+  // 1. the workflow (reuse it if it already exists)
+  const existing = await jira(route`/rest/api/3/workflows/search?queryString=${SHIP_WF}`);
+  if (!existing.values.some((w) => w.name === SHIP_WF)) {
+    const st = await jira(route`/rest/api/3/statuses/search?maxResults=200`);
+    const find = (name, cat) => st.values.find((s) => s.name.toLowerCase() === name.toLowerCase() && s.statusCategory === cat);
+    const want = [['To Do', 'TODO'], ['In Progress', 'IN_PROGRESS'], ['Code Review', 'IN_PROGRESS'], ['Done', 'DONE']];
+    const statuses = want.map(([name, cat]) => { const e = find(name, cat); return e ? { id: e.id, name: e.name, statusCategory: cat, statusReference: e.id } : { name, statusCategory: cat, statusReference: crypto.randomUUID() }; });
+    const R = Object.fromEntries(want.map(([n], i) => [n, statuses[i].statusReference]));
+    const res = await jira(route`/rest/api/3/resolution/search`);
+    const doneRes = (res.values.find((r) => r.name === 'Done') || res.values[0]).id;
+    const tr = (id, name, type, to, from, actions = []) => ({ id: String(id), name, type, toStatusReference: to, links: from.map((f) => ({ fromStatusReference: f })), actions, validators: [], triggers: [], properties: {} });
+    const body = { scope: { type: 'GLOBAL' }, statuses, workflows: [{
+      name: SHIP_WF, description: 'Created by Interlock as a demo: a delivery workflow with the shortcuts teams add over time.', startPointLayout: { x: -100, y: 0 },
+      statuses: Object.values(R).map((r, i) => ({ statusReference: r, layout: { x: i * 200, y: 0 }, properties: {} })),
+      transitions: [tr(1, 'Create', 'INITIAL', R['To Do'], []), tr(11, 'Start work', 'DIRECTED', R['In Progress'], [R['To Do']]),
+        tr(21, 'Ready for review', 'DIRECTED', R['Code Review'], [R['In Progress']]),
+        tr(31, 'Approve', 'DIRECTED', R['Done'], [R['Code Review']], [{ ruleKey: 'system:update-field', parameters: { field: 'resolution', value: doneRes, mode: '' } }]),
+        tr(41, 'Request changes', 'DIRECTED', R['In Progress'], [R['Code Review']]),
+        tr(51, 'Close', 'GLOBAL', R['Done'], []), tr(61, 'Reopen', 'DIRECTED', R['To Do'], [R['Done']])],
+    }] };
+    await jira(route`/rest/api/3/workflows/create`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  }
+  // 2. a scheme that uses it, and 3. a company-managed software project on that scheme
+  const schemes = await jira(route`/rest/api/3/workflowscheme?maxResults=50`);
+  let scheme = schemes.values.find((s) => s.name === 'Ship workflow scheme');
+  if (!scheme) scheme = await jira(route`/rest/api/3/workflowscheme`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Ship workflow scheme', description: 'Created by Interlock for the Ship demo.', defaultWorkflow: SHIP_WF }) });
+  let key = 'SHIP';
+  for (let n = 2; ; n++) {
+    const r = await api.asUser().requestJira(route`/rest/api/3/project/${key}`);
+    if (r.status === 404) break;
+    key = `SHIP${n}`;
+  }
+  await jira(route`/rest/api/3/project`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+    key, name: key === 'SHIP' ? 'Ship (Interlock demo)' : `Ship ${key.slice(4)} (Interlock demo)`, projectTypeKey: 'software', leadAccountId: me.accountId,
+    assigneeType: 'UNASSIGNED', workflowScheme: scheme.id, description: 'Demo project created by Interlock: real tickets moved along real routes of the Ship workflow.',
+  }) });
+  // 4. the tickets
+  const meta = await jira(route`/rest/api/3/issue/createmeta/${key}/issuetypes`);
+  const type = (meta.issueTypes || meta.values).find((t) => t.name === 'Task') || (meta.issueTypes || meta.values).find((t) => !t.subtask);
+  const created = await jira(route`/rest/api/3/issue/bulk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+    issueUpdates: SHIP_TICKETS.map(([summary]) => ({ fields: { project: { key }, issuetype: { id: type.id }, summary } })),
+  }) });
+  return { project: key, moves: created.issues.map((i, n) => ({ key: i.key, route: SHIP_ROUTES[SHIP_TICKETS[n][1]] })) };
+});
+
+// Move a few demo tickets along their routes (called in small batches to stay inside Forge's time limit).
+resolver.define('demoMove', async (req) => {
+  for (const { key, route: steps } of req.payload.moves) {
+    for (const name of steps) {
+      const avail = await jira(route`/rest/api/3/issue/${key}/transitions`);
+      const t = avail.transitions.find((x) => x.name === name);
+      if (!t) break;
+      await jira(route`/rest/api/3/issue/${key}/transitions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transition: { id: t.id } }) });
+    }
+  }
+  return { ok: true };
+});
+
 // Repair a resolution finding at its cause, then prove it again. "validate" asks Jira to check the change
 // without saving it; "apply" saves it (an admin clicks Apply after seeing exactly what will change).
 resolver.define('fix', async (req) => {

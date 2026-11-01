@@ -31,6 +31,12 @@ export default function App() {
 
   // after a fix: prove the whole site again, stay on the same workflow, and say what changed
   const [notice, setNotice] = useState(null);
+  const [pendingSelect, setPendingSelect] = useState(null);
+  useEffect(() => {
+    if (!pendingSelect || !report) return;
+    const w = report.results.find((r) => r.workflow.name === pendingSelect);
+    if (w) { setSelId(w.workflow.id); setPendingSelect(null); }
+  }, [pendingSelect, report]);
   const recheck = async (msg) => {
     const r = await invoke('checkSite', {});
     setReport(r); setFocus(null); setNotice(msg);
@@ -73,6 +79,7 @@ export default function App() {
             <button role="tab" aria-selected={filter === 'findings'} className={filter === 'findings' ? 'on' : ''} onClick={() => setFilter('findings')}>With findings <span>{totals.withFindings}</span></button>
             <button role="tab" aria-selected={filter === 'all'} className={filter === 'all' ? 'on' : ''} onClick={() => setFilter('all')}>All <span>{results.length}</span></button>
           </div>
+          <Demo onDone={async (msg) => { await recheck(msg); setSelId((id) => id); setPendingSelect('Ship: Software delivery workflow'); }} />
           <ul>
             {list.map((r) => (
               <li key={r.workflow.id}>
@@ -291,6 +298,28 @@ function Evidence({ obs, property }) {
     return <p className="il-evidence now">Happening now: {obs.bad.toLocaleString()} of {obs.of.toLocaleString()} {obs.bad === 1 ? noun[0] : noun[1]}. <button className="il-link" onClick={() => openPath(link)}>Show them</button></p>;
   }
   return <p className="il-evidence latent">None yet: 0 of {obs.of.toLocaleString()} {property === 'doneUnresolved' ? 'done' : 'open'} work items. Something else may be setting the resolution; replay the route to be sure.</p>;
+}
+
+// One click builds a realistic software project on an empty site, so the proof has real tickets to count.
+function Demo({ onDone }) {
+  const [state, setState] = useState(null);
+  const go = async () => {
+    try {
+      setState('Creating the Ship workflow, scheme and project…');
+      const { project, moves } = await invoke('demoSetup', {});
+      for (let i = 0; i < moves.length; i += 4) {
+        setState(`Moving tickets along real routes: ${Math.min(i + 4, moves.length)} of ${moves.length}…`);
+        await invoke('demoMove', { moves: moves.slice(i, i + 4) });
+      }
+      setState(null);
+      await onDone(`Added the ${project} demo project: ${moves.length} tickets moved along real routes of the Ship workflow.`);
+    } catch (e) { setState('Could not build the demo: ' + (e.message || e)); }
+  };
+  return (
+    <div className="il-demo">
+      {state ? <p>{state}</p> : <><p>New site, nothing to prove yet?</p><button className="il-btn" onClick={go}>Add the Ship demo project</button></>}
+    </div>
+  );
 }
 
 // Repair at the cause: Interlock shows the exact change, has Jira validate it, and applies it only when
