@@ -22,6 +22,7 @@ export default function App() {
   // once someone picks a workflow the list stops reordering, so counts arriving never move a lever away
   // from under the pointer; a new check unfreezes it
   const [frozen, setFrozen] = useState(null);
+  const [openGroups, setOpenGroups] = useState({});
   const [touched, setTouched] = useState(false);
 
   const run = (fresh = false) => {
@@ -164,16 +165,25 @@ export default function App() {
           {totals.withFindings > 0 && !results.some((r) => r.workflow.name === 'Ship: Software delivery workflow') && <Demo onDone={async (msg) => { setTouched(true); await recheck(msg); setSelId((id) => id); setPendingSelect('Ship: Software delivery workflow'); }} />}
           <p className="il-lever-key" aria-hidden="true"><span className="live">n</span> work items already wrong <span><Lamp state="red" />n</span> findings</p>
           <ul>
-            {list.map((r) => (
-              <li key={r.workflow.id}>
-                <button aria-current={r.workflow.id === sel.workflow.id ? 'true' : undefined} className={`il-lever ${r.workflow.id === sel.workflow.id ? 'pulled' : ''}`} onClick={() => { setSelId(r.workflow.id); setFocus(null); setTouched(true); if (!frozen) setFrozen(ranked.map((x) => x.workflow.id)); }}>
+            {copyGroups(list).map((g) => {
+              const lever = (r, member = false) => (
+                <button aria-current={r.workflow.id === sel.workflow.id ? 'true' : undefined} className={`il-lever ${member ? 'member' : ''} ${r.workflow.id === sel.workflow.id ? 'pulled' : ''}`} onClick={() => { setSelId(r.workflow.id); setFocus(null); setTouched(true); if (!frozen) setFrozen(ranked.map((x) => x.workflow.id)); }}>
                   <span className="handle" aria-hidden="true" />
-                  <LeverName name={r.workflow.name} usage={r.usage} />
-                  <span className="count">{(() => { const n = countsOf(r); return n.own ? <span className="live" title={`${n.own} work items already in the state a proved route leads to`}>{n.own}<span className="sr"> work items already wrong,</span></span>
-                    : n.left ? <span className="live left" title={`${n.left} work items left over in statuses no route reaches today`}>{n.left}<span className="sr"> work items left over,</span></span> : null; })()}{r.findings.length ? <span title={`${r.findings.length} ${r.findings.length === 1 ? 'finding' : 'findings'}`}><Lamp state="red" />{r.findings.length}<span className="sr"> {r.findings.length === 1 ? 'finding' : 'findings'}</span></span> : <><Lamp state="green" /><span className="sr">no findings</span></>}</span>
+                  <LeverName name={r.workflow.name} usage={member ? r.usage : g.members.flatMap((x) => x.usage)} copies={member ? 0 : g.members.length} />
+                  <span className="count">{(() => { const n = g.members.reduce((a, x) => { const c = countsOf(x); return { own: a.own + c.own, left: a.left + c.left }; }, { own: 0, left: 0 });
+                    const m = member ? countsOf(r) : n; return m.own ? <span className="live" title={`${m.own} work items already in the state a proved route leads to`}>{m.own}<span className="sr"> work items already wrong,</span></span>
+                    : m.left ? <span className="live left" title={`${m.left} work items left over in statuses no route reaches today`}>{m.left}<span className="sr"> work items left over,</span></span> : null; })()}{r.findings.length ? <span title={`${r.findings.length} ${r.findings.length === 1 ? 'finding' : 'findings'}${!member && g.members.length > 1 ? ' in each copy' : ''}`}><Lamp state="red" />{r.findings.length}<span className="sr"> {r.findings.length === 1 ? 'finding' : 'findings'}</span></span> : <><Lamp state="green" /><span className="sr">no findings</span></>}</span>
                 </button>
-              </li>
-            ))}
+              );
+              const open = openGroups[g.key] || g.members.some((x, i) => i > 0 && x.workflow.id === sel.workflow.id);
+              return (
+                <li key={g.key}>
+                  {lever(g.members[0])}
+                  {g.members.length > 1 && <button className="il-copies" aria-expanded={open} onClick={() => setOpenGroups((o) => ({ ...o, [g.key]: !open }))}>{open ? 'Hide the copies' : `Same findings in ${g.members.length} copies: show each`}</button>}
+                  {g.members.length > 1 && open && <ul className="il-members">{g.members.map((x) => <li key={x.workflow.id}>{lever(x, true)}</li>)}</ul>}
+                </li>
+              );
+            })}
           </ul>
         </nav>
         <main className="il-main">
@@ -200,6 +210,15 @@ export default function App() {
       </div>
     </div>
   );
+}
+
+// Copies of one workflow (the same name after the project key) with the same findings are one lever, in list order.
+function copyGroups(list) {
+  const base = (r) => r.workflow.name.replace(/^[A-Z][A-Z0-9_]{1,11}: /, '');
+  const sig = (r) => `${base(r)}|${r.findings.map((f) => `${f.property}:${f.subject}`).sort().join(',')}`;
+  const groups = new Map();
+  for (const r of list) { const k = r.findings.length ? sig(r) : r.workflow.id; if (!groups.has(k)) groups.set(k, { key: k, members: [] }); groups.get(k).members.push(r); }
+  return [...groups.values()];
 }
 
 // The finding to light first: the one with the most work items already in its status, else the most severe.
@@ -253,7 +272,7 @@ function Boot() {
 
 // "PROC: Procurement Workflow v2" reads as the project key over the workflow's own name, two lines at most
 const JSM = / workflow for Jira Service Management$/i;
-function LeverName({ name, usage = [] }) {
+function LeverName({ name, usage = [], copies = 0 }) {
   const m = /^([A-Z][A-Z0-9_]{1,11}): (.+)$/.exec(name);
   const projects = [...new Set(usage.map((u) => u.project).filter(Boolean))];
   const plate = projects[0] || m?.[1];
@@ -263,7 +282,7 @@ function LeverName({ name, usage = [] }) {
   return (
     <span className="name" title={`${name}${projects.length ? ` (used in ${projects.join(', ')})` : ''}`}>
       {plate && <b className="proj">{plate}{projects.length > 1 ? ` +${projects.length - 1}` : ''}</b>}
-      {rest}{jsm && <i className="tag">JSM</i>}
+      {rest}{jsm && <i className="tag">JSM</i>}{copies > 1 && <i className="tag">×{copies}</i>}
     </span>
   );
 }
@@ -304,6 +323,8 @@ function Diagram({ model, result, focus }) {
     return first;
   }, [model]);
   const bad = new Set(result.findings.filter((f) => f.status && f.property !== 'unreachable').map((f) => f.status));
+  // with a finding in focus, its own statuses are the red ones (all the statuses that finding is about)
+  const focusSet = focus ? new Set(result.findings.filter((f) => f.property === focus.property && f.status).map((f) => f.status)) : null;
   const unreachable = new Set(result.findings.filter((f) => f.property === 'unreachable').map((f) => f.status));
   const route = focus?.route?.hops || [];
   const routeKey = new Set(route.map((h) => `${h.transitionId}:${h.from}`));
@@ -386,7 +407,7 @@ function Diagram({ model, result, focus }) {
           );
         })}
         {model.statuses.map((s) => {
-          const p = pos.get(s.id), state = bad.has(s.id) ? 'red' : unreachable.has(s.id) ? 'amber' : 'green';
+          const p = pos.get(s.id), state = focusSet ? (focusSet.has(s.id) ? 'red' : unreachable.has(s.id) ? 'amber' : 'off') : bad.has(s.id) ? 'red' : unreachable.has(s.id) ? 'amber' : 'green';
           const i = order.get(s.id) ?? 30;
           return (
             <g key={s.id} className={`il-block ${s.category.toLowerCase()} ${state} ${onRoute.has(s.id) ? 'onroute' : ''}`} transform={`translate(${p.x},${p.y})`} style={{ '--t': `${i * 90}ms` }}>
@@ -397,6 +418,13 @@ function Diagram({ model, result, focus }) {
             </g>
           );
         })}
+        {route.length > 0 && (
+          <g className="il-route-top" aria-hidden="true">
+            {globals.filter((t) => routeKey.has(`${t.id}:${route.find((h) => h.transitionId === t.id)?.from}`)).map((t) => <use key={`g${t.id}`} href={`#il-lit-g${t.id}`} />)}
+            {tracks(model).map((tr, k) => (tr.transitions.some((t) => routeKey.has(`${t.id}:${tr.from}`)) ? <use key={`t${k}`} href={`#il-lit-t${k}`} /> : null))}
+          </g>
+        )}
+        {route.length > 0 && !reduceMotion && <g ref={trainRef} className="il-train"><circle r="9" /><circle r="4" className="core" /></g>}
         {hopLabels.map((l) => {
           const w = l.text.length * labelSize * 0.56 + labelSize;
           return (
@@ -406,13 +434,6 @@ function Diagram({ model, result, focus }) {
             </g>
           );
         })}
-        {route.length > 0 && (
-          <g className="il-route-top" aria-hidden="true">
-            {globals.filter((t) => routeKey.has(`${t.id}:${route.find((h) => h.transitionId === t.id)?.from}`)).map((t) => <use key={`g${t.id}`} href={`#il-lit-g${t.id}`} />)}
-            {tracks(model).map((tr, k) => (tr.transitions.some((t) => routeKey.has(`${t.id}:${tr.from}`)) ? <use key={`t${k}`} href={`#il-lit-t${k}`} /> : null))}
-          </g>
-        )}
-        {route.length > 0 && !reduceMotion && <g ref={trainRef} className="il-train"><circle r="9" /><circle r="4" className="core" /></g>}
       </svg>
       <Legend teamManaged={result.teamManaged} />
     </div>

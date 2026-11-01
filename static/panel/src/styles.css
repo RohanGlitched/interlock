@@ -313,3 +313,11 @@ button, select { font: inherit; color: inherit; }
 .il-route-top use { pointer-events: none; }
 
 .il-table .il-intend input { background: #ffffff; color: #1d2620; border-color: rgba(29, 38, 32, 0.35); }
+
+.il-block.off .lamp { --on: #4a574e; }
+.il-hop rect { fill: var(--il-panel-block); stroke: var(--il-lit-red); stroke-width: 1.2; fill-opacity: 1; }
+
+/* copies of one workflow with the same findings: one lever, the copies on demand */
+.il-copies { display: block; margin: -2px 14px 6px 41px; padding: 0; border: 0; background: none; color: var(--il-lit-amber); font-size: 11.5px; font-weight: 600; cursor: pointer; text-align: left; }
+.il-members { list-style: none; margin: 0 0 6px; padding: 0 0 0 18px; border-left: 2px solid rgba(230, 236, 228, 0.12); margin-left: 20px; }
+.il-lever.member { padding-top: 4px; padding-bottom: 4px; }
