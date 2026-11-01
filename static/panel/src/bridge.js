@@ -10,7 +10,7 @@ async function devInvoke(fn, payload = {}) {
     const d = await (await fetch('/dev/site.json')).json();
     const statuses = new Map(d.statuses.values.map((s) => [s.id, { name: s.name, category: s.statusCategory }]));
     const t0 = performance.now();
-    const results = d.workflows.map((w) => ({ ...verify(w, statuses, { mustPass: payload.rules?.[w.id] || [] }), teamManaged: false, usage: [{ project: 'DESIGN', issueType: null }], scope: w.scope }));
+    const results = d.workflows.map((w) => ({ ...verify(w, statuses, { mustPass: payload.rules?.[w.id] || [] }), teamManaged: false, usage: [{ project: (/^([A-Z][A-Z0-9_]{1,11}): /.exec(w.name) || [])[1] || 'DESIGN', issueType: null }], scope: w.scope }));
     return {
       checkedAt: new Date().toISOString(), ms: Math.round(performance.now() - t0), results,
       models: Object.fromEntries(d.workflows.map((w) => [w.id, buildModel(w, statuses)])), projects: [],
@@ -24,6 +24,7 @@ async function devInvoke(fn, payload = {}) {
     return { key: 'DESIGN-41', steps };
   }
   if (fn === 'saveRules') return { rules: {} };
+  if (fn === 'measureSite') return {}; // the saved copy has no work items to count
   if (fn === 'traceItems') return { read: 50, ways: [{ from: 'Closed', to: 'Reopened', effect: 'resolution left as it was', count: 41, example: 'PROC-12', flagged: true }, { from: 'Resolved', to: 'Reopened', effect: 'resolution cleared', count: 9, example: 'PROC-40', flagged: false }], onProvedStatus: 41 };
   if (fn === 'markIntended') {
     const all = JSON.parse(localStorage.getItem('il-intended') || '{}');

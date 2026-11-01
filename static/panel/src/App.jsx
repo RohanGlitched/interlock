@@ -292,7 +292,7 @@ function Diagram({ model, result, focus }) {
     const h = layout(model), v = layout(model, true);
     if (!frame || frame.w < 50 || frame.h < 50) return h;
     const fit = (l) => Math.min(frame.w / l.width, (frame.h - 60) / l.height);
-    return fit(v) > fit(h) * 1.15 ? v : h;
+    return fit(v) > fit(h) * 1.15 || (fit(h) < 0.8 && fit(v) > fit(h)) ? v : h;
   }, [model, frame]);
   // the scale the diagram has when it fits the frame; zoom multiplies it
   const fitScale = frame ? Math.max(0.55, Math.min(1.7, frame.w / width, (frame.h - 60) / height)) : 0.8;
@@ -446,7 +446,8 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
   }
   return (
     <aside className="il-table" aria-label="Interlocking table" ref={(el) => { if (el && el.dataset.wf !== result.workflow.id) { el.scrollTop = 0; el.dataset.wf = result.workflow.id; } }}>
-      <h2>{result.workflow.name}</h2>
+      <h2 title={result.workflow.name}>{(() => { const m = /^([A-Z][A-Z0-9_]{1,11}): (.+)$/.exec(result.workflow.name); const rest = m ? m[2] : result.workflow.name;
+        return JSM.test(rest) ? <>{rest.replace(JSM, '')} <i className="il-tag">Jira Service Management</i></> : rest; })()}</h2>
       <p className="il-meta">{plural(result.statuses, 'status', 'statuses')}, {plural(result.transitions, 'transition', 'transitions')}, {plural(result.states, 'reachable state', 'reachable states')}{usage ? `, used in ${[...new Set(result.usage.map((u) => u.project))].join(', ')}` : ''}.</p>
       {!result.findings.length && !result.undecided?.length && !result.noInitial && <p className="il-held"><Lamp state="green" />Every property holds for every reachable state.</p>}
       {result.noInitial && <p className="il-note">This workflow has no create transition, so there is no route to prove.</p>}
@@ -542,15 +543,15 @@ function Tiers({ f, obs, statuses, verdict }) {
   // lit only for items in this finding's own statuses (when Jira's count per status is known)
   const own = obs?.byStatus ? statuses.reduce((n, s) => n + (obs.byStatus[s] || 0), 0) : obs?.bad || 0;
   const tiers = [
-    { label: 'Proved', on: true, why: 'The model checker found this route among every reachable state.' },
-    { label: 'In your data', on: own > 0, na: !counted, why: counted ? 'Work items in the statuses this finding is about are already in this state.' : 'Jira data cannot show this kind of finding; replay the route instead.' },
-    { label: 'Replayed', on: !!verdict?.confirmed, na: !f.route, why: 'A new work item followed the route through Jira itself.' },
+    { label: 'Proved', aspect: 'white', on: true, why: 'The model checker found this route among every reachable state.' },
+    { label: 'In your data', aspect: 'amber', on: own > 0, na: !counted, why: counted ? 'Work items in the statuses this finding is about are already in this state.' : 'Jira data cannot show this kind of finding; replay the route instead.' },
+    { label: 'Replayed', aspect: 'red', on: !!verdict?.confirmed, na: !f.route, why: 'A new work item followed the route through Jira itself.' },
   ];
   return (
     <ol className="il-tiers" aria-label="Evidence">
       {tiers.map((t) => (
         <li key={t.label} className={t.on ? 'on' : t.na ? 'na' : ''} title={t.why}>
-          <span className={`il-lamp ${t.on ? 'white' : ''}`} aria-hidden="true" />
+          <span className={`il-lamp aspect ${t.on ? t.aspect : ''}`} aria-hidden="true" />
           {t.label}<span className="sr">{t.on ? ': yes' : t.na ? ': not applicable' : ': not yet'}</span>
         </li>
       ))}

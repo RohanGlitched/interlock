@@ -41,8 +41,10 @@ function layoutLine(model) {
     const maxD = Math.max(...dist.values());
     const catCol = { TODO: 0, IN_PROGRESS: Math.max(1, Math.ceil(maxD / 2)), DONE: maxD + 1 };
     for (const s of model.statuses) col.set(s.id, dist.has(s.id) ? dist.get(s.id) : catCol[s.category] ?? 1);
-    const lastCol = Math.max(...col.values());
-    for (const s of model.statuses) if (s.category === 'DONE' && !dist.has(s.id)) col.set(s.id, lastCol);
+    // done statuses are the terminus: one last column, after every status work passes through
+    const open = model.statuses.filter((s) => s.category !== 'DONE').map((s) => col.get(s.id));
+    const terminus = (open.length ? Math.max(...open) : 0) + 1;
+    for (const s of model.statuses) if (s.category === 'DONE') col.set(s.id, terminus);
   }
   const byCol = new Map();
   for (const s of model.statuses) { const c = col.get(s.id); if (!byCol.has(c)) byCol.set(c, []); byCol.get(c).push(s); }

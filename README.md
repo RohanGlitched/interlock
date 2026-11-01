@@ -61,7 +61,7 @@ On any site without it, **Add the Ship demo project** builds a seeded demo: a de
   - whether its conditions let anyone use it.
 - A breadth-first search over (status, resolution set) states finds every reachable state, with parent links, so every finding comes with its shortest route.
 - Team-managed projects keep the resolution in step with done statuses themselves, and the model knows that.
-- Checking all 97 workflows on that demo site, 761 transitions in all, takes about 100 ms once the configuration is loaded. Loading it over the REST API takes 10 to 20 seconds the first time on a site that size; later checks reuse the transition-screen answers for 10 minutes and take about half as long. The engine is plain JavaScript with no dependencies, and the page runs it again in the browser whenever you change a rule.
+- Checking all 97 workflows on that demo site, 761 transitions in all, takes well under 100 ms once the configuration is loaded (the page shows the time it took). Loading it over the REST API takes 10 to 20 seconds the first time on a site that size; later checks reuse the transition-screen answers for 10 minutes and take about half as long. The engine is plain JavaScript with no dependencies, and the page runs it again in the browser whenever you change a rule.
 
 ## Permissions
 

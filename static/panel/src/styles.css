@@ -285,15 +285,26 @@ button, select { font: inherit; color: inherit; }
 .il-finding { background: var(--il-surface); border-radius: 3px; }
 .il-finding.on { box-shadow: inset 4px 0 0 var(--il-red), 0 0 0 1px var(--il-red); border-color: var(--il-red); }
 .il-chips button { border-radius: 3px; background: var(--il-surface); color: var(--il-text); border-color: rgba(29, 38, 32, 0.3); font-weight: 600; }
-.il-chips button.on { background: var(--il-panel-block); color: #fff6d6; border-color: var(--il-panel-block); }
+.il-chips button.on { background: var(--il-surface); color: var(--il-text); border: 2px solid var(--il-panel-block); padding: 1px 9px; }
 /* actions as signal-box push buttons: a dark block, a lit edge */
-.il-btn.primary { background: var(--il-panel-block); color: #fff6d6; border: 1px solid var(--il-panel-block); box-shadow: inset 0 -3px 0 var(--il-lit-red); font-weight: 700; }
+.il-btn.primary { background: var(--il-panel-block); color: #fff6d6; border: 1px solid var(--il-panel-block); box-shadow: inset 0 -3px 0 var(--il-lit-amber); font-weight: 700; }
 .il-btn.primary:hover { background: #26322b; }
 .il-table .il-btn:not(.primary) { background: var(--il-surface); color: var(--il-text); border-color: rgba(29, 38, 32, 0.3); }
 .il-table .il-link { color: #0b5a3a; }
 .il-route { border-left-color: var(--il-red); }
 .il-lever .tag { margin-left: 6px; padding: 0 4px; border-radius: 2px; background: rgba(230, 236, 228, 0.14); font-style: normal; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; vertical-align: 1px; }
-.il-lever-key { flex-wrap: nowrap; white-space: nowrap; font-size: 10.5px; }
+.il-lever-key { font-size: 10.5px; }
 
 .il-confirm { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--il-border); border-radius: 3px; background: var(--il-surface); font-size: 13px; }
 .il-confirm p { margin: 0 0 8px; }
+
+/* the evidence as a three-aspect signal head on a dark housing */
+.il-tiers { background: var(--il-panel-block); color: rgba(230, 236, 228, 0.7); border-radius: 16px; padding: 6px 12px; display: inline-flex; gap: 4px 14px; margin: -2px 12px 10px 33px; }
+.il-tiers li.on { color: #fff6d6; }
+.il-tiers li.na { color: rgba(230, 236, 228, 0.45); }
+.il-tiers .il-lamp.aspect { width: 13px; height: 13px; background: #2d3831; box-shadow: inset 0 0 0 1.5px #4a574e; }
+.il-tiers .il-lamp.aspect.white { background: radial-gradient(circle at 35% 35%, #ffffff, #e9e4cf 60%); box-shadow: 0 0 8px rgba(255, 246, 214, 0.75); }
+.il-tiers .il-lamp.aspect.amber { background: radial-gradient(circle at 35% 35%, #ffe2a3, var(--il-lit-amber) 60%); box-shadow: 0 0 8px rgba(255, 181, 46, 0.7); }
+.il-tiers .il-lamp.aspect.red { background: radial-gradient(circle at 35% 35%, #ffb0a6, var(--il-lit-red) 60%); box-shadow: 0 0 8px rgba(255, 85, 68, 0.75); }
+.il-tiers li.na .il-lamp.aspect { background: transparent; box-shadow: none; border: 1.5px dashed #56625b; }
+.il-table h2 .il-tag { font-style: normal; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 2px; background: rgba(29, 38, 32, 0.1); vertical-align: 2px; }
