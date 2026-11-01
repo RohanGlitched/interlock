@@ -29,6 +29,13 @@ export default function App() {
   };
   useEffect(run, []);
 
+  // after a fix: prove the whole site again, stay on the same workflow, and say what changed
+  const [notice, setNotice] = useState(null);
+  const recheck = async (msg) => {
+    const r = await invoke('checkSite', {});
+    setReport(r); setFocus(null); setNotice(msg);
+  };
+
   // re-check the selected workflow in the browser whenever its rules change
   const results = useMemo(() => {
     if (!report) return [];
@@ -59,6 +66,7 @@ export default function App() {
         </p>
         <button className="il-btn" onClick={run}>Check again</button>
       </header>
+      {notice && <div className="il-notice" role="status"><Lamp state="green" />{notice}<button className="il-link" onClick={() => setNotice(null)}>Dismiss</button></div>}
       <div className="il-body">
         <nav className="il-levers" aria-label="Workflows">
           <div className="il-filter" role="tablist">
@@ -80,7 +88,7 @@ export default function App() {
         <main className="il-main">
           <Diagram key={sel.workflow.id} model={model} result={sel} focus={focus} />
         </main>
-        <Table result={sel} model={model} focus={focus} setFocus={setFocus} replays={replays} setReplays={setReplays}
+        <Table result={sel} model={model} focus={focus} setFocus={setFocus} replays={replays} setReplays={setReplays} onFixed={recheck}
           rules={rules[sel.workflow.id] || []} setRules={(r) => setRules((x) => ({ ...x, [sel.workflow.id]: r }))} />
       </div>
     </div>
@@ -202,7 +210,7 @@ function Legend({ teamManaged }) {
 }
 
 // ---------- the interlocking table ----------
-function Table({ result, model, focus, setFocus, replays, setReplays, rules, setRules }) {
+function Table({ result, model, focus, setFocus, replays, setReplays, rules, setRules, onFixed }) {
   const usage = result.usage.find((u) => u.project);
   async function replay(f) {
     const k = `${result.workflow.id}:${f.id}`;
@@ -259,6 +267,9 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
                       <button className="il-link" onClick={() => openIssue(rp.key)}>Open {rp.key}</button>
                     </div>
                   )}
+                  {(f.property === 'doneUnresolved' || f.property === 'openResolved') && (
+                    <Fix key={f.id} f={f} result={result} onFixed={onFixed} />
+                  )}
                 </div>
               )}
             </li>
@@ -280,6 +291,41 @@ function Evidence({ obs, property }) {
     return <p className="il-evidence now">Happening now: {obs.bad.toLocaleString()} of {obs.of.toLocaleString()} {obs.bad === 1 ? noun[0] : noun[1]}. <button className="il-link" onClick={() => openPath(link)}>Show them</button></p>;
   }
   return <p className="il-evidence latent">None yet: 0 of {obs.of.toLocaleString()} {property === 'doneUnresolved' ? 'done' : 'open'} work items. Something else may be setting the resolution; replay the route to be sure.</p>;
+}
+
+// Repair at the cause: Interlock shows the exact change, has Jira validate it, and applies it only when
+// an admin clicks Apply. Then the whole site is proved again.
+function Fix({ f, result, onFixed }) {
+  const [state, setState] = useState({ step: 'idle' });
+  const fixText = f.property === 'doneUnresolved' ? 'set the resolution' : 'clear the resolution';
+  const ask = async (mode) => {
+    setState((s) => ({ ...s, step: mode === 'apply' ? 'applying' : 'checking' }));
+    try {
+      const r = await invoke('fix', { workflowId: result.workflow.id, property: f.property, status: f.status, mode });
+      if (mode === 'apply' && r.applied) {
+        await onFixed(`Fixed and proved again: ${result.workflow.name} now ${f.property === 'doneUnresolved' ? `sets a resolution on every route into ${f.subject}` : `clears the resolution on every route back to ${f.subject}`}.`);
+        return;
+      }
+      setState({ step: 'checked', ...r });
+    } catch (e) { setState({ step: 'error', error: e.message }); }
+  };
+  const obs = result.observed?.[f.property];
+  return (
+    <div className="il-fix">
+      <h4>Fix at the cause</h4>
+      {state.step === 'idle' && <><p>Make every transition into {f.subject} {fixText}. Jira checks the change before anything is saved.</p><button className="il-btn" onClick={() => ask('validate')}>Check the fix with Jira</button></>}
+      {state.step === 'checking' && <p className="il-note">Asking Jira to validate the change…</p>}
+      {state.step === 'checked' && (state.valid ? (
+        <>
+          <p>Interlock will add <b>{f.property === 'doneUnresolved' ? `Set resolution to ${state.resolutionName}` : 'Clear resolution'}</b> to {state.changed.length === 1 ? 'the transition' : 'the transitions'} <b>{state.changed.join(', ')}</b> in {result.workflow.name}. Jira validated it: no errors.</p>
+          <button className="il-btn primary" onClick={() => ask('apply')}>Apply the fix to the workflow</button>
+        </>
+      ) : <p className="il-err">Jira rejected the change: {(state.errors || []).join('; ') || state.note}</p>)}
+      {state.step === 'applying' && <p className="il-note">Saving the workflow and proving the site again…</p>}
+      {state.step === 'error' && <p className="il-err">{state.error}</p>}
+      {obs?.bad > 0 && <p className="il-note">The fix stops new cases. The {obs.bad} work items already affected need a bulk change: <button className="il-link" onClick={() => openPath(`/issues/?jql=${encodeURIComponent(obs.jql)}`)}>open them</button>.</p>}
+    </div>
+  );
 }
 
 // One row per property, worst first; each affected status becomes a chip with its own route.

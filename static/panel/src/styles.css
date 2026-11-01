@@ -24,7 +24,7 @@ body { background: var(--il-surface); color: var(--il-text); font: 14px/1.45 var
 button, select { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--ds-border-focused, #388bff); outline-offset: 2px; }
 
-.il-app { display: grid; grid-template-rows: auto 1fr; height: 100vh; min-height: 560px; }
+.il-app { display: flex; flex-direction: column; height: 100vh; min-height: 560px; }
 .il-head { display: flex; align-items: center; gap: 20px; padding: 14px 20px; border-bottom: 1px solid var(--il-border); }
 .il-brand { display: flex; align-items: center; gap: 10px; }
 .il-brand h1 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 0.01em; }
@@ -36,7 +36,7 @@ button, select { font: inherit; color: inherit; }
 .il-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .il-link { border: 0; background: none; padding: 0; color: var(--ds-link, #0c66e4); cursor: pointer; font-weight: 600; }
 
-.il-body { display: grid; grid-template-columns: 300px minmax(0, 1fr) 380px; min-height: 0; }
+.il-body { display: grid; grid-template-columns: 300px minmax(0, 1fr) 380px; min-height: 0; flex: 1; }
 
 /* lamps */
 .il-lamp { display: inline-block; width: 11px; height: 11px; border-radius: 50%; flex: none; background: var(--il-off); box-shadow: inset 0 -2px 2px rgba(0, 0, 0, 0.15); }
@@ -142,3 +142,10 @@ button, select { font: inherit; color: inherit; }
 .il-evidence.latent { background: var(--ds-background-warning, #fff7d6); color: var(--ds-text-warning, #7f5f01); }
 .il-live { color: var(--il-red); }
 .il-lever .live { background: var(--il-red); color: #fff; border-radius: 999px; padding: 0 7px; font-size: 11px; margin-right: 4px; }
+
+.il-fix { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--il-border); }
+.il-fix h4 { margin: 0 0 4px; font-size: 13px; }
+.il-fix p { margin: 0 0 8px; font-size: 13px; color: var(--il-subtle); }
+.il-fix p b { color: var(--il-text); }
+.il-notice { display: flex; align-items: center; gap: 10px; padding: 10px 20px; background: var(--ds-background-success, #dcfff1); color: var(--ds-text-success, #216e4e); font-weight: 600; }
+.il-notice .il-link { margin-left: auto; }

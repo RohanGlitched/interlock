@@ -152,6 +152,51 @@ resolver.define('replay', async (req) => {
   return { key: created.key, steps };
 });
 
+// Repair a resolution finding at its cause, then prove it again. "validate" asks Jira to check the change
+// without saving it; "apply" saves it (an admin clicks Apply after seeing exactly what will change).
+resolver.define('fix', async (req) => {
+  const { workflowId, property, status, mode } = req.payload;
+  const got = await jira(route`/rest/api/3/workflows`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workflowIds: [workflowId] }) });
+  const wf = got.workflows?.[0];
+  if (!wf) throw new Error('Workflow not found');
+  const st = await jira(route`/rest/api/3/statuses/search?maxResults=200`);
+  const cat = Object.fromEntries(st.values.map((s) => [s.id, s.statusCategory]));
+  const ids = new Set(wf.statuses.map((s) => s.statusReference));
+  const all = wf.statuses.map((s) => s.statusReference);
+  const changed = [];
+  let resolutionName = null;
+  if (property === 'doneUnresolved') {
+    const res = await jira(route`/rest/api/3/resolution/search`);
+    const done = res.values.find((r) => r.name === 'Done') || res.values[0];
+    resolutionName = done.name;
+    for (const t of wf.transitions) {
+      if (t.type === 'INITIAL' || t.toStatusReference !== status) continue;
+      const sets = (t.actions || []).some((a) => a.ruleKey === 'system:update-field' && a.parameters?.field === 'resolution' && a.parameters.value);
+      if (sets) continue;
+      t.actions = [...(t.actions || []), { ruleKey: 'system:update-field', parameters: { field: 'resolution', value: done.id, mode: '' } }];
+      changed.push(t.name);
+    }
+  } else if (property === 'openResolved') {
+    for (const t of wf.transitions) {
+      if (t.type === 'INITIAL' || t.toStatusReference !== status) continue;
+      const from = t.type === 'GLOBAL' ? all : (t.links || []).map((l) => l.fromStatusReference);
+      if (!from.some((f) => cat[f] === 'DONE')) continue;
+      const clears = (t.actions || []).some((a) => a.ruleKey === 'system:update-field' && a.parameters?.field === 'resolution' && !a.parameters.value);
+      if (clears) continue;
+      t.actions = [...(t.actions || []), { ruleKey: 'system:update-field', parameters: { field: 'resolution', value: '', mode: '' } }];
+      changed.push(t.name);
+    }
+  } else throw new Error('Interlock can repair resolution findings automatically; other findings need a person to redesign the workflow.');
+  if (!changed.length) return { changed, note: 'Nothing to change on these transitions.' };
+  const statuses = st.values.filter((s) => ids.has(s.id)).map((s) => ({ id: s.id, name: s.name, statusCategory: s.statusCategory, statusReference: s.id }));
+  const update = { statuses, workflows: [{ id: wf.id, version: wf.version, name: wf.name, description: wf.description, statuses: wf.statuses, transitions: wf.transitions, startPointLayout: wf.startPointLayout }] };
+  const validation = await jira(route`/rest/api/3/workflows/update/validation`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ payload: update }) });
+  if (validation.errors?.length) return { changed, resolutionName, valid: false, errors: validation.errors.map((e) => e.message || JSON.stringify(e)) };
+  if (mode !== 'apply') return { changed, resolutionName, valid: true };
+  await jira(route`/rest/api/3/workflows/update`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(update) });
+  return { changed, resolutionName, valid: true, applied: true };
+});
+
 export const handler = resolver.getDefinitions();
 
 // ---------- tools for agents (Rovo actions, exposed over MCP) ----------
@@ -200,7 +245,9 @@ export async function proveRoute(payload) {
   if (!target || !via) return { error: `Use status names from this workflow: ${w.statuses.map((s) => statuses.get(s.statusReference)?.name).join(', ')}.` };
   const r = checkSite({ ...site, workflows: [w] }, { [w.id]: [{ target, via }] }).results[0];
   const f = r.findings.find((x) => x.property === 'mustPass');
+  // `ruleHolds` is about the rule "every route to target passes through"; the answer sentence states the
+  // finding plainly so it reads right whichever way the user phrased the question.
   return f
-    ? { holds: false, answer: `No. Work can reach ${payload.target} without passing ${payload.through}.`, counterexample: brief(f).route }
-    : { holds: true, answer: `Yes. Every route that reaches ${payload.target} passes ${payload.through}; Interlock checked all ${r.states} reachable states.` };
+    ? { ruleHolds: false, canSkip: true, answer: `Work CAN reach ${payload.target} without passing ${payload.through}. The rule "${payload.target} only through ${payload.through}" is broken by this route.`, counterexample: brief(f).route }
+    : { ruleHolds: true, canSkip: false, answer: `Work can NOT reach ${payload.target} without passing ${payload.through}: every route to ${payload.target} goes through ${payload.through}. Interlock checked all ${r.states} reachable states.` };
 }
