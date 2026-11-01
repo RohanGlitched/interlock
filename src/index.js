@@ -134,7 +134,13 @@ export async function measure(site, report) {
   const count = async (jql) => (await jira(route`/rest/api/3/search/approximate-count`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jql }),
   })).count;
-  const ours = ((await kvs.get('replays').catch(() => null)) || []).filter((k) => /^[A-Z][A-Z0-9_]+-\d+$/.test(k)).slice(0, 200);
+  // Interlock's own replay items: the ones it recorded, and any older ones found by their summary (a positive
+  // phrase search; Jira's negated text search is unreliable, so they are excluded by key instead)
+  const found = await jira(route`/rest/api/3/search/jql`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jql: 'summary ~ "\\"Interlock replay\\""', maxResults: 100, fields: ['summary'] }) }).catch(() => null);
+  const recorded = (await kvs.get('replays').catch(() => null)) || [];
+  const ours = [...new Set([...recorded, ...((found?.issues || []).filter((i) => /^Interlock replay:/.test(i.fields?.summary || '')).map((i) => i.key))])]
+    .filter((k) => /^[A-Z][A-Z0-9_]+-\d+$/.test(k)).slice(0, 500);
   const notOurs = ours.length ? ` AND key not in (${ours.join(', ')})` : '';
   const jobs = [];
   for (const r of report.results) {
@@ -528,6 +534,11 @@ const RES_ACTION = (a) => a.ruleKey === 'system:update-field' && a.parameters?.f
 // Fixes are kept one per workflow, property and status, with each changed transition's actions before and
 // after, so Undo puts back exactly what was there, and refuses if someone has edited those transitions since.
 const fixKey = (workflowId, property, status) => `${workflowId}|${property}|${status}`;
+// Two lists of transition actions are the same rule for rule, whatever ids Jira gave them when it saved them.
+const sameActions = (a = [], b = []) => {
+  const norm = (list) => JSON.stringify((list || []).map(({ id, ...rest }) => ({ ruleKey: rest.ruleKey, parameters: rest.parameters || {} })));
+  return norm(a) === norm(b);
+};
 resolver.define('fix', async (req) => {
   await requireAdmin();
   const { workflowId, property, status, mode } = req.payload;
@@ -546,7 +557,7 @@ resolver.define('fix', async (req) => {
     if (!record) throw new Error('Interlock has no record of this fix, so it cannot take it back.');
     for (const t of wf.transitions) {
       if (!(t.id in record.before)) continue;
-      if (record.after && JSON.stringify(t.actions || []) !== JSON.stringify(record.after[t.id])) throw new Error(`"${t.name}" has been edited since Interlock fixed it, so Undo would overwrite that edit. Change it back in the workflow editor instead.`);
+      if (record.after && sameActions(t.actions, record.after[t.id]) === false) throw new Error(`"${t.name}" has been edited since Interlock fixed it, so Undo would overwrite that edit. Change it back in the workflow editor instead.`);
       t.actions = record.before[t.id];
       changed.push(t.name);
     }
@@ -589,7 +600,10 @@ resolver.define('fix', async (req) => {
   const k = fixKey(workflowId, property, status);
   if (mode === 'undo') delete fixes[k];
   else {
-    const after = Object.fromEntries(wf.transitions.filter((t) => t.id in before).map((t) => [t.id, t.actions]));
+    // what Jira actually saved (read back), so a later Undo compares like with like
+    const back = await jira(route`/rest/api/3/workflows`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workflowIds: [workflowId] }) }).catch(() => null);
+    const saved = back?.workflows?.[0]?.transitions || wf.transitions;
+    const after = Object.fromEntries(saved.filter((t) => t.id in before).map((t) => [t.id, t.actions || []]));
     fixes[k] = { workflowId, property, status, statusName: st.find((s) => s.id === status)?.name, before, after, transitions: changed, at: new Date().toISOString(), name: wf.name };
   }
   await kvs.set('fixes', fixes);
@@ -668,7 +682,7 @@ async function proveRouteInner(payload) {
   // finding plainly so it reads right whichever way the user phrased the question.
   return f
     ? { ruleHolds: false, canSkip: true, answer: `Work CAN reach ${payload.target} without passing ${payload.through}. The rule "${payload.target} only through ${payload.through}" is broken by this route.`, counterexample: brief(f).route }
-    : { ruleHolds: true, canSkip: false, answer: `Work can NOT reach ${payload.target} without passing ${payload.through}: every route to ${payload.target} goes through ${payload.through}. Interlock checked all ${r.states} reachable states.` };
+    : { ruleHolds: true, canSkip: false, answer: `Work can NOT reach ${payload.target} without passing ${payload.through}: every route to ${payload.target} goes through ${payload.through}, the first time and after any reopening. Interlock searched every route from creation.` };
 }
 
 // Rovo and MCP callers who are not Jira admins cannot read workflow configuration; tell them so plainly.

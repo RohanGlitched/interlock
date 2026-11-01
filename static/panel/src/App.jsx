@@ -107,7 +107,7 @@ export default function App() {
         <div className="il-brand"><Lamp state="green" /><h1 className="sr">Interlock</h1></div>
         <p className="il-summary">
           Checked {plural(results.length, 'workflow', 'workflows')} and {totals.transitions.toLocaleString()} transitions, every reachable state, in {report.ms} ms.{' '}
-          <b>{plural(totals.withFindings, 'workflow has', 'workflows have')} routes that go wrong</b>{totals.live ? <>, and <b className="il-live">{totals.live.toLocaleString()} work items are already in a wrong state</b>.</> : measuring ? '. Counting the work items already affected…' : '.'}
+          <b>{plural(totals.withFindings, 'workflow has', 'workflows have')} routes that go wrong</b>{totals.live ? <>, and <b className="il-live">{totals.live.toLocaleString()} work items are already in a wrong state</b>{totals.onRoute < totals.live ? `, ${totals.onRoute.toLocaleString()} of them where a proved route still leads today` : ''}.</> : measuring ? '. Counting the work items already affected…' : '.'}
         </p>
         <button className="il-btn" onClick={() => run(true)}>Check again</button>
       </header>
@@ -165,8 +165,14 @@ function withCounts(report, counts) {
 
 function summarise(results) {
   const live = results.reduce((a, r) => a + Object.values(r.observed || {}).reduce((b, o) => b + o.bad, 0), 0);
+  // of those, the ones in a status a proved route reaches in that bad state today
+  const onRoute = results.reduce((a, r) => a + Object.entries(r.observed || {}).reduce((b, [p, o]) => {
+    if (!o.byStatus) return b + o.bad;
+    const statuses = new Set(r.findings.filter((f) => f.property === p).map((f) => f.subject));
+    return b + Object.entries(o.byStatus).filter(([s]) => statuses.has(s)).reduce((t, [, n]) => t + n, 0);
+  }, 0), 0);
   return {
-    live,
+    live, onRoute,
     transitions: results.reduce((a, r) => a + r.transitions, 0),
     withFindings: results.filter((r) => r.findings.length).length,
   };
@@ -463,14 +469,19 @@ function Evidence({ obs, property, flagged, fixAt }) {
   const link = `/issues/?jql=${encodeURIComponent(obs.jql)}`;
   const byStatus = Object.entries(obs.byStatus || {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
   const elsewhere = obs.byStatus ? obs.bad - byStatus.reduce((t, [, n]) => t + n, 0) : 0;
+  // the finding's own statuses come first; the rest of the workflow's items are context, not this finding's evidence
+  const own = obs.byStatus ? byStatus.filter(([s]) => flagged.includes(s)).reduce((t, [, n]) => t + n, 0) : obs.bad;
   if (obs.bad > 0) {
     return (
-      <div className="il-evidence now">
-        <p>Happening now: {obs.bad.toLocaleString()} of {obs.of.toLocaleString()} {obs.bad === 1 ? noun[0] : noun[1]}. <button className="il-link" onClick={() => openPath(link)}>Show them</button>
+      <div className={`il-evidence ${own ? 'now' : 'other-only'}`}>
+        <p>{own
+          ? <>Happening now: {own.toLocaleString()} {own === 1 ? noun[0] : noun[1]} in {flagged.join(', ')}{obs.byStatus ? ` (${obs.bad.toLocaleString()} of ${obs.of.toLocaleString()} across this workflow)` : ` of ${obs.of.toLocaleString()}`}.</>
+          : <>None in {flagged.join(', ')}. Elsewhere in this workflow, {obs.bad.toLocaleString()} of {obs.of.toLocaleString()} {obs.bad === 1 ? noun[0] : noun[1]}.</>}
+          {' '}<button className="il-link" onClick={() => openPath(link)}>Show them</button>
           {' '}{!trace && <button className="il-link trace" onClick={async () => { setTrace('loading'); try { setTrace(await invoke('traceItems', { jql: obs.jql, flagged, since: fixAt })); } catch (e) { setTrace({ error: e.message }); } }}>How did they get there?</button>}</p>
         {(byStatus.length > 0 || elsewhere > 0) && (
           <p className="il-bystatus">
-            {byStatus.map(([s, n]) => <span key={s}><b>{n.toLocaleString()}</b> in {s}</span>)}
+            {own > 0 && byStatus.map(([s, n]) => <span key={s}><b>{n.toLocaleString()}</b> in {s}</span>)}
             {elsewhere > 0 && <span className="other"><b>{elsewhere.toLocaleString()}</b> in statuses no route leaves {property === 'doneUnresolved' ? 'unresolved' : 'resolved'} today: the workflow has changed since{fixAt ? ` (Interlock fixed it on ${new Date(fixAt).toLocaleDateString()})` : ', or something else put them there'}. Their history says which.</span>}
           </p>
         )}
