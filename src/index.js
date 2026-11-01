@@ -1,5 +1,5 @@
 import Resolver from '@forge/resolver';
-import api, { route } from '@forge/api';
+import api, { route, assumeTrustedRoute } from '@forge/api';
 import { verify, buildModel } from '../engine/interlock.mjs';
 
 // Interlock reads the site's workflow configuration as the signed-in admin, checks every workflow,
@@ -45,12 +45,13 @@ export async function loadSite() {
     startAt += page.values.length;
   }
   // Which projects and work types use each company-managed workflow (via workflow schemes).
-  const usage = {};
+  const usage = {}, schemes = {};
   const classic = projects.filter((p) => p.style === 'classic');
   await pool(classic, 6, async (p) => {
     const r = await jira(route`/rest/api/3/workflowscheme/project?projectId=${p.id}`).catch(() => null);
     const scheme = r?.values?.[0]?.workflowScheme;
     if (!scheme) return;
+    schemes[p.id] = scheme.issueTypeMappings || {};
     const add = (name, issueType) => { (usage[name] ||= []).push({ project: p.key, projectId: p.id, issueType }); };
     if (scheme.defaultWorkflow) add(scheme.defaultWorkflow, null);
     for (const [issueType, name] of Object.entries(scheme.issueTypeMappings || {})) add(name, issueType);
@@ -74,7 +75,7 @@ export async function loadSite() {
     const pid = w.scope?.type === 'PROJECT' ? w.scope.project?.id : null;
     if (pid && byId[pid] && !usage[w.name]) usage[w.name] = [{ project: byId[pid].key, projectId: pid, issueType: null }];
   }
-  return { workflows, statuses, projects, usage, screenHasResolution, teamManagedProjects: [...teamManagedProjects] };
+  return { workflows, statuses, projects, usage, schemes, screenHasResolution, teamManagedProjects: [...teamManagedProjects] };
 }
 
 export function checkSite(site, rules = {}) {
@@ -101,9 +102,20 @@ export async function measure(site, report) {
   for (const r of report.results) {
     const kinds = new Set(r.findings.map((f) => f.property).filter((p) => p === 'doneUnresolved' || p === 'openResolved'));
     if (!kinds.size || !r.usage.length) continue;
-    const projects = [...new Set(r.usage.map((u) => u.project))];
-    const explicit = r.usage.filter((u) => u.issueType);
-    const scope = `project in (${projects.map((p) => `"${p}"`).join(',')})` + (explicit.length && explicit.length === r.usage.length ? ` AND issuetype in (${[...new Set(explicit.map((u) => u.issueType))].join(',')})` : '');
+    // Per project: the work types mapped to this workflow, or, where it is the scheme's default, every
+    // work type except those the scheme maps to other workflows. No work item is counted twice.
+    const byProject = new Map();
+    for (const u of r.usage) {
+      const e = byProject.get(u.project) || { id: u.projectId, types: new Set(), isDefault: false };
+      if (u.issueType) e.types.add(u.issueType); else e.isDefault = true;
+      byProject.set(u.project, e);
+    }
+    const clauses = [...byProject].map(([key, e]) => {
+      if (!e.isDefault) return `(project = "${key}" AND issuetype in (${[...e.types].join(',')}))`;
+      const elsewhere = Object.entries(site.schemes?.[e.id] || {}).filter(([, name]) => name !== r.workflow.name).map(([t]) => t);
+      return elsewhere.length ? `(project = "${key}" AND issuetype not in (${elsewhere.join(',')}))` : `project = "${key}"`;
+    });
+    const scope = clauses.length === 1 ? clauses[0] : `(${clauses.join(' OR ')})`;
     jobs.push({ r, kinds, scope });
   }
   await pool(jobs, 6, async ({ r, kinds, scope }) => {
@@ -143,11 +155,15 @@ resolver.define('measureSite', async (req) => {
 // Replay a finding's route on a new work item: create it where the workflow is used, run each
 // transition through Jira, and read back status and resolution after every step.
 resolver.define('replay', async (req) => {
-  const { project, issueType, hops, label } = req.payload;
+  const { project, projectId, issueType, hops, label, startName, workflow } = req.payload;
   let type = issueType;
   if (!type) {
+    // the scheme's default workflow applies to every work type it does not map elsewhere, so pick one of those
     const meta = await jira(route`/rest/api/3/issue/createmeta/${project}/issuetypes`);
-    type = (meta.issueTypes || meta.values).find((t) => !t.subtask)?.id;
+    const scheme = projectId ? (await jira(route`/rest/api/3/workflowscheme/project?projectId=${projectId}`).catch(() => null))?.values?.[0]?.workflowScheme : null;
+    const mapped = scheme?.issueTypeMappings || {};
+    type = (meta.issueTypes || meta.values).find((t) => !t.subtask && (!mapped[t.id] || mapped[t.id] === workflow))?.id;
+    if (!type) throw new Error(`Every work type in ${project} uses a different workflow, so there is nothing to replay this route on.`);
   }
   const created = await jira(route`/rest/api/3/issue`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -159,9 +175,15 @@ resolver.define('replay', async (req) => {
     return { status: i.fields.status.name, category: i.fields.status.statusCategory.key, resolution: i.fields.resolution?.name || null };
   };
   steps.push({ step: 'Created', ...(await read()) });
+  // a work item that starts somewhere else is on a different workflow: stop rather than prove the wrong thing
+  if (startName && steps[0].status !== startName) {
+    return { key: created.key, steps: [...steps, { step: 'Check the workflow', error: `${created.key} started in ${steps[0].status}, not ${startName}, so it follows a different workflow` }] };
+  }
   for (const h of hops) {
     const avail = await jira(route`/rest/api/3/issue/${created.key}/transitions`);
-    const t = avail.transitions.find((x) => x.id === String(h.transitionId)) || avail.transitions.find((x) => x.name === h.transition);
+    // match by name and where it leads; transition ids repeat across workflows
+    const t = avail.transitions.find((x) => x.name === h.transition && x.to?.name === h.toName)
+      || avail.transitions.find((x) => x.name === h.transition);
     if (!t) { steps.push({ step: h.transition, error: 'This transition is not available to you on the replay item' }); break; }
     await jira(route`/rest/api/3/issue/${created.key}/transitions`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transition: { id: t.id } }),
@@ -170,6 +192,19 @@ resolver.define('replay', async (req) => {
     steps.push({ step: h.transition, ...(await read()) });
   }
   return { key: created.key, steps };
+});
+
+// Remove a replay work item when the admin is done with it. Only items Interlock created (label and
+// summary both match) can be deleted this way, and only with the admin's own delete permission.
+resolver.define('deleteReplay', async (req) => {
+  const key = String(req.payload.key || '');
+  if (!/^[A-Z][A-Z0-9_]+-\d+$/.test(key)) throw new Error('Not a work item key');
+  const i = await jira(route`/rest/api/3/issue/${key}?fields=summary,labels`);
+  if (!i.fields.labels?.includes('interlock-replay') || !i.fields.summary?.startsWith('Interlock replay:')) {
+    throw new Error(`${key} was not created by an Interlock replay, so Interlock will not delete it`);
+  }
+  await jira(route`/rest/api/3/issue/${key}`, { method: 'DELETE' });
+  return { deleted: key };
 });
 
 // ---------- the Ship demo, for empty sites ----------
@@ -214,9 +249,11 @@ resolver.define('demoSetup', async (req) => {
   // 1. the workflow (reuse it if it already exists)
   const existing = await jira(route`/rest/api/3/workflows/search?queryString=${SHIP_WF}`);
   if (!existing.values.some((w) => w.name === SHIP_WF)) {
-    const st = await jira(route`/rest/api/3/statuses/search?maxResults=200`);
-    const find = (name, cat) => st.values.find((s) => s.name.toLowerCase() === name.toLowerCase() && s.statusCategory === cat);
     const want = [['To Do', 'TODO'], ['In Progress', 'IN_PROGRESS'], ['Code Review', 'IN_PROGRESS'], ['Done', 'DONE']];
+    // look each status up by name, so a site with thousands of statuses reuses the existing ones
+    const found = await Promise.all(want.map(([name]) => jira(route`/rest/api/3/statuses/search?searchString=${name}&maxResults=50`)));
+    const st = { values: found.flatMap((f) => f.values) };
+    const find = (name, cat) => st.values.find((s) => s.name.toLowerCase() === name.toLowerCase() && s.statusCategory === cat);
     const statuses = want.map(([name, cat]) => { const e = find(name, cat); return e ? { id: e.id, name: e.name, statusCategory: cat, statusReference: e.id } : { name, statusCategory: cat, statusReference: crypto.randomUUID() }; });
     const R = Object.fromEntries(want.map(([n], i) => [n, statuses[i].statusReference]));
     const res = await jira(route`/rest/api/3/resolution/search`);
@@ -271,25 +308,59 @@ resolver.define('demoMove', async (req) => {
 
 // Repair a resolution finding at its cause, then prove it again. "validate" asks Jira to check the change
 // without saving it; "apply" saves it (an admin clicks Apply after seeing exactly what will change).
+// The statuses of one workflow, fetched by id (50 at a time), so a site with thousands of statuses works.
+async function statusesById(ids) {
+  const out = [];
+  for (let i = 0; i < ids.length; i += 50) {
+    // status ids are numbers; anything else is dropped before it reaches the query string
+    const q = ids.slice(i, i + 50).filter((id) => /^\d+$/.test(id)).map((id) => `id=${id}`).join('&');
+    if (q) out.push(...(await jira(assumeTrustedRoute(`/rest/api/3/statuses?${q}`))));
+  }
+  return out;
+}
+
+// Does this transition screen ask the person for a resolution? Then the person chooses it, and a fix must
+// not overwrite their choice (a "Won't Do" must stay "Won't Do").
+async function screenAsksResolution(screenId) {
+  if (!screenId) return false;
+  const tabs = await jira(route`/rest/api/3/screens/${screenId}/tabs`).catch(() => []);
+  for (const tab of tabs) {
+    const fields = await jira(route`/rest/api/3/screens/${screenId}/tabs/${tab.id}/fields`).catch(() => []);
+    if (fields.some((f) => f.id === 'resolution')) return true;
+  }
+  return false;
+}
+
+const RES_ACTION = (a) => a.ruleKey === 'system:update-field' && a.parameters?.field === 'resolution';
+
 resolver.define('fix', async (req) => {
-  const { workflowId, property, status, mode } = req.payload;
+  const { workflowId, property, status, mode, transitions: undoNames } = req.payload;
   const got = await jira(route`/rest/api/3/workflows`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workflowIds: [workflowId] }) });
   const wf = got.workflows?.[0];
   if (!wf) throw new Error('Workflow not found');
-  const st = await jira(route`/rest/api/3/statuses/search?maxResults=200`);
-  const cat = Object.fromEntries(st.values.map((s) => [s.id, s.statusCategory]));
-  const ids = new Set(wf.statuses.map((s) => s.statusReference));
   const all = wf.statuses.map((s) => s.statusReference);
+  const st = await statusesById(all);
+  const cat = Object.fromEntries(st.map((s) => [s.id, s.statusCategory]));
   const changed = [];
   let resolutionName = null;
-  if (property === 'doneUnresolved') {
+  if (mode === 'undo') {
+    // take back exactly what a fix added: the resolution step on the transitions it changed
+    for (const t of wf.transitions) {
+      if (!undoNames?.includes(t.name) || t.toStatusReference !== status) continue;
+      const keep = (t.actions || []).filter((a) => !RES_ACTION(a));
+      if (keep.length === (t.actions || []).length) continue;
+      t.actions = keep;
+      changed.push(t.name);
+    }
+  } else if (property === 'doneUnresolved') {
     const res = await jira(route`/rest/api/3/resolution/search`);
     const done = res.values.find((r) => r.name === 'Done') || res.values[0];
     resolutionName = done.name;
     for (const t of wf.transitions) {
       if (t.type === 'INITIAL' || t.toStatusReference !== status) continue;
-      const sets = (t.actions || []).some((a) => a.ruleKey === 'system:update-field' && a.parameters?.field === 'resolution' && a.parameters.value);
+      const sets = (t.actions || []).some((a) => RES_ACTION(a) && a.parameters.value);
       if (sets) continue;
+      if (await screenAsksResolution(t.transitionScreen?.parameters?.screenId)) continue;
       t.actions = [...(t.actions || []), { ruleKey: 'system:update-field', parameters: { field: 'resolution', value: done.id, mode: '' } }];
       changed.push(t.name);
     }
@@ -304,12 +375,12 @@ resolver.define('fix', async (req) => {
       changed.push(t.name);
     }
   } else throw new Error('Interlock can repair resolution findings automatically; other findings need a person to redesign the workflow.');
-  if (!changed.length) return { changed, note: 'Nothing to change on these transitions.' };
-  const statuses = st.values.filter((s) => ids.has(s.id)).map((s) => ({ id: s.id, name: s.name, statusCategory: s.statusCategory, statusReference: s.id }));
+  if (!changed.length) return { changed, note: 'Nothing to change: every transition into this status already sets the resolution or asks the person for one.' };
+  const statuses = st.map((s) => ({ id: s.id, name: s.name, statusCategory: s.statusCategory, statusReference: s.id }));
   const update = { statuses, workflows: [{ id: wf.id, version: wf.version, name: wf.name, description: wf.description, statuses: wf.statuses, transitions: wf.transitions, startPointLayout: wf.startPointLayout }] };
   const validation = await jira(route`/rest/api/3/workflows/update/validation`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ payload: update }) });
   if (validation.errors?.length) return { changed, resolutionName, valid: false, errors: validation.errors.map((e) => e.message || JSON.stringify(e)) };
-  if (mode !== 'apply') return { changed, resolutionName, valid: true };
+  if (mode !== 'apply' && mode !== 'undo') return { changed, resolutionName, valid: true };
   await jira(route`/rest/api/3/workflows/update`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(update) });
   return { changed, resolutionName, valid: true, applied: true };
 });
@@ -328,7 +399,7 @@ const brief = (f) => ({
   route: f.route ? [f.route.startName, ...f.route.hops.map((h) => `${h.transition}${h.global ? ' (from any status)' : ''} -> ${h.toName}`)].join(' | ') : undefined,
 });
 
-export async function checkWorkflows(payload) {
+async function checkWorkflowsInner(payload) {
   const site = await loadSite();
   const report = checkSite(site);
   const project = payload?.projectKey && String(payload.projectKey).toUpperCase();
@@ -343,7 +414,7 @@ export async function checkWorkflows(payload) {
   };
 }
 
-export async function getWorkflowFindings(payload) {
+async function getWorkflowFindingsInner(payload) {
   const site = await loadSite();
   const w = findWorkflow(site, payload?.workflow);
   if (!w) return { error: `No workflow matches "${payload?.workflow}".` };
@@ -352,7 +423,7 @@ export async function getWorkflowFindings(payload) {
 }
 
 // "Can work reach <target> without passing <through>?" answered for every route, not a sample.
-export async function proveRoute(payload) {
+async function proveRouteInner(payload) {
   const site = await loadSite();
   const w = findWorkflow(site, payload?.workflow);
   if (!w) return { error: `No workflow matches "${payload?.workflow}".` };
@@ -368,3 +439,15 @@ export async function proveRoute(payload) {
     ? { ruleHolds: false, canSkip: true, answer: `Work CAN reach ${payload.target} without passing ${payload.through}. The rule "${payload.target} only through ${payload.through}" is broken by this route.`, counterexample: brief(f).route }
     : { ruleHolds: true, canSkip: false, answer: `Work can NOT reach ${payload.target} without passing ${payload.through}: every route to ${payload.target} goes through ${payload.through}. Interlock checked all ${r.states} reachable states.` };
 }
+
+// Rovo and MCP callers who are not Jira admins cannot read workflow configuration; tell them so plainly.
+const forAdmins = (fn) => async (payload) => {
+  try { return await fn(payload); }
+  catch (e) {
+    if (/Jira answered (401|403)/.test(e.message)) return { error: 'Interlock reads workflow configuration, which only Jira administrators can see. Ask a Jira admin to run this check.' };
+    throw e;
+  }
+};
+export const checkWorkflows = forAdmins(checkWorkflowsInner);
+export const getWorkflowFindings = forAdmins(getWorkflowFindingsInner);
+export const proveRoute = forAdmins(proveRouteInner);

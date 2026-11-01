@@ -6,6 +6,9 @@ modules:
         function: resolver
       title: Interlock
       icon: resource:main;interlock-icon.svg
+      # workflows are site configuration, so the page is shown to Jira admins only
+      displayConditions:
+        isAdmin: true
   # The same checker, as tools for agents: Rovo, and any MCP client (Claude Code, Cursor, Codex) through
   # the Atlassian MCP server once an admin enables Interlock for external clients.
   rovo:mcp:

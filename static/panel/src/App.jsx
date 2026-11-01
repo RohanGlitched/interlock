@@ -40,9 +40,9 @@ export default function App() {
     const w = report.results.find((r) => r.workflow.name === pendingSelect);
     if (w) { setSelId(w.workflow.id); setPendingSelect(null); }
   }, [pendingSelect, report]);
-  const recheck = async (msg) => {
+  const recheck = async (msg, undo = null) => {
     const r = await invoke('checkSite', {});
-    setReport(r); setFocus(null); setNotice(msg);
+    setReport(r); setFocus(null); setNotice(msg ? { msg, undo } : null);
     setMeasuring(true);
     invoke('measureSite', {}).then((m) => setReport((cur) => cur && withCounts(cur, m))).catch(() => {}).finally(() => setMeasuring(false));
   };
@@ -77,14 +77,23 @@ export default function App() {
         </p>
         <button className="il-btn" onClick={run}>Check again</button>
       </header>
-      {notice && <div className="il-notice" role="status"><Lamp state="green" />{notice}<button className="il-link" onClick={() => setNotice(null)}>Dismiss</button></div>}
+      {notice && (
+        <div className="il-notice" role="status"><Lamp state="green" />{notice.msg}
+          {notice.undo && <button className="il-link" onClick={async () => {
+            const u = notice.undo; setNotice({ msg: 'Taking the fix back and proving the site again…' });
+            try { await invoke('fix', { ...u, mode: 'undo' }); await recheck(`Undone: ${u.transitions.join(', ')} in ${u.name} no longer change the resolution.`); }
+            catch (e) { setNotice({ msg: 'Could not undo the fix: ' + (e.message || e) }); }
+          }}>Undo</button>}
+          <button className="il-link" onClick={() => setNotice(null)}>Dismiss</button>
+        </div>
+      )}
       <div className="il-body">
         <nav className="il-levers" aria-label="Workflows">
           <div className="il-filter" role="tablist">
             <button role="tab" aria-selected={filter === 'findings'} className={filter === 'findings' ? 'on' : ''} onClick={() => setFilter('findings')}>With findings <span>{totals.withFindings}</span></button>
             <button role="tab" aria-selected={filter === 'all'} className={filter === 'all' ? 'on' : ''} onClick={() => setFilter('all')}>All <span>{results.length}</span></button>
           </div>
-          <Demo onDone={async (msg) => { await recheck(msg); setSelId((id) => id); setPendingSelect('Ship: Software delivery workflow'); }} />
+          {!results.some((r) => r.workflow.name === 'Ship: Software delivery workflow') && <Demo onDone={async (msg) => { await recheck(msg); setSelId((id) => id); setPendingSelect('Ship: Software delivery workflow'); }} />}
           <ul>
             {list.map((r) => (
               <li key={r.workflow.id}>
@@ -235,7 +244,7 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
     const k = `${result.workflow.id}:${f.id}`;
     setReplays((r) => ({ ...r, [k]: { status: 'running' } }));
     try {
-      const out = await invoke('replay', { project: usage.project, issueType: usage.issueType, hops: f.route.hops, label: `${f.title}, ${result.workflow.name}`, startName: f.route.startName });
+      const out = await invoke('replay', { project: usage.project, projectId: usage.projectId, issueType: usage.issueType, workflow: result.workflow.name, hops: f.route.hops, label: `${f.title}, ${result.workflow.name}`, startName: f.route.startName });
       setReplays((r) => ({ ...r, [k]: { status: 'done', ...out } }));
     } catch (e) { setReplays((r) => ({ ...r, [k]: { status: 'error', error: e.message } })); }
   }
@@ -284,7 +293,14 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
                     <div className={`il-replay ${verdict.confirmed ? 'confirmed' : 'cleared'}`}>
                       <p><b>{verdict.confirmed ? 'Confirmed on a real work item' : 'Not reproduced'}</b>{verdict.text}</p>
                       <ol>{rp.steps.map((s, i) => <li key={i}><span>{s.step}</span><span>{s.error || `${s.status}, resolution ${s.resolution || 'empty'}`}</span></li>)}</ol>
-                      <button className="il-link" onClick={() => openIssue(rp.key)}>Open {rp.key}</button>
+                      <p className="il-replay-act">
+                        <button className="il-link" onClick={() => openIssue(rp.key)}>Open {rp.key}</button>
+                        <button className="il-link" onClick={async () => {
+                          try { await invoke('deleteReplay', { key: rp.key }); setReplays((r) => ({ ...r, [k]: undefined })); }
+                          catch (e) { setReplays((r) => ({ ...r, [k]: { ...rp, deleteError: e.message } })); }
+                        }}>Delete {rp.key}</button>
+                      </p>
+                      {rp.deleteError && <p className="il-err">{rp.deleteError}</p>}
                     </div>
                   )}
                   {(f.property === 'doneUnresolved' || f.property === 'openResolved') && (
@@ -366,7 +382,8 @@ function Fix({ f, result, onFixed }) {
     try {
       const r = await invoke('fix', { workflowId: result.workflow.id, property: f.property, status: f.status, mode });
       if (mode === 'apply' && r.applied) {
-        await onFixed(`Fixed and proved again: ${result.workflow.name} now ${f.property === 'doneUnresolved' ? `sets a resolution on every route into ${f.subject}` : `clears the resolution on every route back to ${f.subject}`}.`);
+        await onFixed(`Fixed and proved again: ${result.workflow.name} now ${f.property === 'doneUnresolved' ? `sets a resolution on every route into ${f.subject}` : `clears the resolution on every route back to ${f.subject}`}.`,
+          { workflowId: result.workflow.id, property: f.property, status: f.status, transitions: r.changed, name: result.workflow.name });
         return;
       }
       setState({ step: 'checked', ...r });
@@ -376,14 +393,14 @@ function Fix({ f, result, onFixed }) {
   return (
     <div className="il-fix">
       <h4>Fix at the cause</h4>
-      {state.step === 'idle' && <><p>Make every transition into {f.subject} {fixText}. Jira checks the change before anything is saved.</p><button className="il-btn" onClick={() => ask('validate')}>Check the fix with Jira</button></>}
+      {state.step === 'idle' && <><p>Make every transition into {f.subject} {fixText}, except ones whose screen already asks the person for a resolution. Jira checks the change before anything is saved, and you can undo it.</p><button className="il-btn" onClick={() => ask('validate')}>Check the fix with Jira</button></>}
       {state.step === 'checking' && <p className="il-note">Asking Jira to validate the change…</p>}
       {state.step === 'checked' && (state.valid ? (
         <>
           <p>Interlock will add <b>{f.property === 'doneUnresolved' ? `Set resolution to ${state.resolutionName}` : 'Clear resolution'}</b> to {state.changed.length === 1 ? 'the transition' : 'the transitions'} <b>{state.changed.join(', ')}</b> in {result.workflow.name}. Jira validated it: no errors.</p>
           <button className="il-btn primary" onClick={() => ask('apply')}>Apply the fix to the workflow</button>
         </>
-      ) : <p className="il-err">Jira rejected the change: {(state.errors || []).join('; ') || state.note}</p>)}
+      ) : state.note ? <p className="il-note">{state.note}</p> : <p className="il-err">Jira rejected the change: {(state.errors || []).join('; ')}</p>)}
       {state.step === 'applying' && <p className="il-note">Saving the workflow and proving the site again…</p>}
       {state.step === 'error' && <p className="il-err">{state.error}</p>}
       {obs?.bad > 0 && <p className="il-note">The fix stops new cases. The {obs.bad} work items already affected need a bulk change: <button className="il-link" onClick={() => openPath(`/issues/?jql=${encodeURIComponent(obs.jql)}`)}>open them</button>.</p>}
