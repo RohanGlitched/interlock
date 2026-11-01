@@ -3,9 +3,7 @@
 :root {
   /* the signal box: an enamel mimic panel, graphite track, three lamp colours */
   --il-enamel: #e7ebe3;
-  --il-enamel-deep: #d7ddd3;
-  --il-track: #3a443d;
-  --il-ink: var(--ds-text, #1d2620);
+  --il-enamel-ink: #1d2620;
   --il-green: #1e8a5a;
   --il-red: var(--ds-text-danger, #c93a2e);
   --il-amber: #d99a1c;
@@ -89,7 +87,7 @@ button, select { font: inherit; color: inherit; }
   linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 28px 28px,
   linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 28px 28px, var(--il-panel); }
 .il-diagram-wrap { position: relative; padding: 24px; display: flex; flex-direction: column; }
-.il-diagram-wrap.fit { height: 100%; justify-content: center; }
+.il-diagram-wrap.fit { height: 100%; justify-content: center; overflow: auto; }
 .il-diagram-wrap.fit .il-diagram { flex: 1 1 auto; min-height: 0; width: 100%; height: auto; }
 .il-diagram-wrap.zoomed .il-diagram { flex: none; max-width: none; }
 .il-zoom { position: sticky; top: 0; align-self: flex-end; z-index: 2; display: inline-flex; gap: 2px; margin-bottom: -28px; }
@@ -193,12 +191,14 @@ button, select { font: inherit; color: inherit; }
 /* a tier that cannot apply keeps readable text; its lamp is drawn dashed, never lit */
 .il-tiers li.na { color: var(--il-subtlest); }
 .il-tiers li.na .il-lamp { box-shadow: none; border: 1.5px dashed var(--il-off); }
-.il-tiers .il-lamp { width: 10px; height: 10px; background: transparent; box-shadow: inset 0 0 0 1.5px var(--il-off); }
+.il-tiers .il-lamp { width: 10px; height: 10px; background: transparent; box-shadow: inset 0 0 0 1.5px var(--il-subtle); }
 .il-tiers .il-lamp.white { background: radial-gradient(circle at 35% 35%, #ff9b8f, var(--il-red) 60%); box-shadow: 0 0 6px rgba(201, 58, 46, 0.55); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* the watch strip: last proof and what changed since the one before */
-.il-watch { border-bottom: 1px solid var(--il-border); background: var(--il-surface); font-size: 13px; color: var(--il-subtle); }
+.il-watch { border-bottom: 1px solid rgba(230, 236, 228, 0.1); background: var(--il-panel-block); font-size: 13px; color: rgba(230, 236, 228, 0.78);
+  --il-text: var(--il-panel-ink); --il-subtle: rgba(230, 236, 228, 0.78); --il-subtlest: rgba(230, 236, 228, 0.65); --il-border: rgba(230, 236, 228, 0.14); --il-brand: var(--il-lit-amber); }
+.il-watch summary b { color: var(--il-lit-red) !important; }
 .il-watch summary { display: flex; align-items: center; gap: 10px; padding: 8px 20px; cursor: pointer; list-style: none; }
 .il-watch summary::-webkit-details-marker { display: none; }
 .il-watch summary b { color: var(--il-red); }
@@ -233,8 +233,8 @@ button, select { font: inherit; color: inherit; }
 .il-intended li .il-link { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
 
 /* a focused route: blocks off the route step back too */
-.il-diagram.focused .il-block:not(.onroute) { opacity: 0.3; transition: opacity .25s ease; }
-.il-tiers .il-lamp { box-shadow: inset 0 0 0 1.5px var(--il-subtle); }
+.il-diagram.focused .il-block:not(.onroute) { opacity: 0.6; transition: opacity .25s ease; }
+.il-diagram.focused .il-block:not(.onroute) rect { stroke: #6d7d71; stroke-width: 1.5; }
 .il-evidence.none { margin: -4px 12px 10px 33px; font-size: 12px; color: var(--il-subtlest); }
 .il-lastfix { margin: 10px 0; padding: 8px 10px; border-left: 3px solid var(--il-green); background: var(--ds-background-success, #dcfff1); font-size: 13px; }
 
@@ -261,7 +261,6 @@ button, select { font: inherit; color: inherit; }
 
 .il-lever .live.left { background: color-mix(in srgb, var(--il-lit-amber) 28%, transparent); color: var(--il-panel-ink); }
 
-.il-diagram-wrap.fit { overflow: auto; }
 
 /* the steps of a lit route, named on the track */
 .il-hop rect { fill: var(--il-panel-block); stroke: var(--il-lit-red); stroke-width: 1.2; }
@@ -273,3 +272,20 @@ button, select { font: inherit; color: inherit; }
 .il-clear h2 { margin: 12px 0 8px; font-size: 22px; line-height: 1.25; font-weight: 800; }
 .il-clear p { margin: 0 0 16px; color: rgba(230, 236, 228, 0.8); }
 .il-clear .il-demo { padding: 0; border: 0; }
+
+/* the interlocking table: the panel's cream enamel with its own ink, the same in Jira's light and dark themes */
+.il-table { background: var(--il-enamel); color: var(--il-enamel-ink); border-left: 3px solid var(--il-panel-block);
+  --il-text: #1d2620; --il-subtle: #45524a; --il-subtlest: #56625b; --il-surface: #f1f4ee; --il-border: rgba(29, 38, 32, 0.2); --il-red: #b3261e; }
+.il-table h2 { color: var(--il-text); }
+.il-finding { background: var(--il-surface); border-radius: 3px; }
+.il-finding.on { box-shadow: inset 4px 0 0 var(--il-red), 0 0 0 1px var(--il-red); border-color: var(--il-red); }
+.il-chips button { border-radius: 3px; background: var(--il-surface); color: var(--il-text); border-color: rgba(29, 38, 32, 0.3); font-weight: 600; }
+.il-chips button.on { background: var(--il-panel-block); color: #fff6d6; border-color: var(--il-panel-block); }
+/* actions as signal-box push buttons: a dark block, a lit edge */
+.il-btn.primary { background: var(--il-panel-block); color: #fff6d6; border: 1px solid var(--il-panel-block); box-shadow: inset 0 -3px 0 var(--il-lit-red); font-weight: 700; }
+.il-btn.primary:hover { background: #26322b; }
+.il-table .il-btn:not(.primary) { background: var(--il-surface); color: var(--il-text); border-color: rgba(29, 38, 32, 0.3); }
+.il-table .il-link { color: #0b5a3a; }
+.il-route { border-left-color: var(--il-red); }
+.il-lever .tag { margin-left: 6px; padding: 0 4px; border-radius: 2px; background: rgba(230, 236, 228, 0.14); font-style: normal; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; vertical-align: 1px; }
+.il-lever-key { flex-wrap: nowrap; white-space: nowrap; font-size: 10.5px; }

@@ -164,7 +164,7 @@ export default function App() {
               <li key={r.workflow.id}>
                 <button aria-current={r.workflow.id === sel.workflow.id ? 'true' : undefined} className={`il-lever ${r.workflow.id === sel.workflow.id ? 'pulled' : ''}`} onClick={() => { setSelId(r.workflow.id); setFocus(null); setTouched(true); if (!frozen) setFrozen(ranked.map((x) => x.workflow.id)); }}>
                   <span className="handle" aria-hidden="true" />
-                  <LeverName name={r.workflow.name} />
+                  <LeverName name={r.workflow.name} usage={r.usage} />
                   <span className="count">{(() => { const n = countsOf(r); return n.own ? <span className="live" title={`${n.own} work items already in the state a proved route leads to`}>{n.own}<span className="sr"> work items already wrong,</span></span>
                     : n.left ? <span className="live left" title={`${n.left} work items left over in statuses no route reaches today`}>{n.left}<span className="sr"> work items left over,</span></span> : null; })()}{r.findings.length ? <span title={`${r.findings.length} ${r.findings.length === 1 ? 'finding' : 'findings'}`}><Lamp state="red" />{r.findings.length}<span className="sr"> {r.findings.length === 1 ? 'finding' : 'findings'}</span></span> : <><Lamp state="green" /><span className="sr">no findings</span></>}</span>
                 </button>
@@ -246,11 +246,18 @@ function Boot() {
 }
 
 // "PROC: Procurement Workflow v2" reads as the project key over the workflow's own name, two lines at most
-function LeverName({ name }) {
+const JSM = / workflow for Jira Service Management$/i;
+function LeverName({ name, usage = [] }) {
   const m = /^([A-Z][A-Z0-9_]{1,11}): (.+)$/.exec(name);
+  const projects = [...new Set(usage.map((u) => u.project).filter(Boolean))];
+  const plate = projects[0] || m?.[1];
+  let rest = m ? m[2] : name;
+  const jsm = JSM.test(rest);
+  if (jsm) rest = rest.replace(JSM, '');
   return (
-    <span className="name" title={name}>
-      {m ? <><b className="proj">{m[1]}</b>{m[2]}</> : name}
+    <span className="name" title={`${name}${projects.length ? ` (used in ${projects.join(', ')})` : ''}`}>
+      {plate && <b className="proj">{plate}{projects.length > 1 ? ` +${projects.length - 1}` : ''}</b>}
+      {rest}{jsm && <i className="tag">JSM</i>}
     </span>
   );
 }
@@ -284,7 +291,7 @@ function Diagram({ model, result, focus }) {
     return fit(v) > fit(h) * 1.15 ? v : h;
   }, [model, frame]);
   // the scale the diagram has when it fits the frame; zoom multiplies it
-  const fitScale = frame ? Math.max(0.8, Math.min(1.7, frame.w / width, (frame.h - 60) / height)) : 0.8;
+  const fitScale = frame ? Math.max(0.55, Math.min(1.7, frame.w / width, (frame.h - 60) / height)) : 0.8;
   const order = useMemo(() => { // the order in which the explorer first reaches each status
     const seen = explore(model), first = new Map(); let i = 0;
     for (const n of seen.values()) if (!first.has(n.s)) first.set(n.s, i++);
@@ -348,7 +355,7 @@ function Diagram({ model, result, focus }) {
         <button onClick={() => setZoom((z) => Math.min(4, z + 0.5))} aria-label="Zoom in">+</button>
       </div>
       <svg className={`il-diagram ${route.length ? 'focused' : ''}`} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet"
-        style={zoom > 1 ? { width: width * fitScale * zoom, height: height * fitScale * zoom } : { maxHeight: height * 1.7, maxWidth: width * 1.7, minWidth: width * 0.8 }} role="img" aria-label={`Track diagram of ${result.workflow.name}`}>
+        style={zoom > 1 ? { width: width * fitScale * zoom, height: height * fitScale * zoom } : { maxHeight: height * 1.7, maxWidth: width * 1.7, minWidth: width * 0.55 }} role="img" aria-label={`Track diagram of ${result.workflow.name}`}>
         <defs>
           <filter id="il-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.4" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
         </defs>
