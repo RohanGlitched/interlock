@@ -26,7 +26,7 @@ modules:
       prompt: resource:main;prompts/agent.txt
       conversationStarters:
         - Which workflows can finish work without a resolution?
-        - "Can work in the Ship: Software delivery workflow reach Done without passing Code Review?"
+        - "In the Ship: Software delivery workflow, can work skip Code Review?"
         - What is wrong with the Web design process task workflow?
       actions:
         - check-workflows
