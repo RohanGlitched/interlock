@@ -21,7 +21,7 @@ It is for Jira administrators and the teams who rely on Jira's numbers: service 
 
 Each finding comes with the shortest route that breaks the property, from creation, transition by transition.
 
-13 of those 29 are copies of Jira Service Management's own template workflows; the Change Management template alone appears in six projects with the same five findings. One was confirmed on a real work item: in the Change Management template, a declined change sent back to Review stays resolved as Declined. The full list is in [Resolution defects in Jira's template workflows](docs/atlassian-templates.md).
+13 of those 29 are copies of Jira Service Management template workflows; the Change Management copy appears in six projects with the same five findings, and one was confirmed on a real work item: a declined change sent back to Review stays resolved as Declined. A project created from the same template today is clean, because Atlassian has since changed the template. Template fixes never reach the projects already made from them, and nothing in Jira tells an admin which workflows still carry the old routes. The full list is in [Resolution defects in template-made workflows](docs/atlassian-templates.md).
 
 ## Evidence, in three steps
 
@@ -42,7 +42,7 @@ Then **fix at the cause**: for resolution findings, Interlock adds *Set resoluti
 - The interlocking table lists the findings with their routes, evidence lamps, replay and fix.
 - You can write a rule ("work reaches Done only through Code Review") and Interlock proves or refutes it over every route at once, in the browser.
 
-On a site with no software project, **Add the Ship demo project** builds a seeded demo: a delivery workflow with the shortcuts teams add over time, and 20 tickets moved along real routes. Half of its 12 done tickets end up unresolved, and the rule *Done only through Code Review* is refuted with the exact route. The demo shows the mechanics; the evidence that this happens in real configurations is the [built-in template report](docs/atlassian-templates.md).
+On a site with no software project, **Add the Ship demo project** builds a seeded demo: a delivery workflow with the shortcuts teams add over time, and 20 tickets moved along real routes. Half of its 12 done tickets end up unresolved, and the rule *Done only through Code Review* is refuted with the exact route. The demo shows the mechanics; the evidence from real configurations is the [template report](docs/atlassian-templates.md).
 
 **The daily watch** proves every workflow again once a day and compares each proof with the one before, so a workflow edit that opens a bad route shows up as a new finding with the date it appeared.
 
@@ -77,7 +77,7 @@ Interlock changes a workflow only when an admin clicks **Apply** on a fix that J
 
 Install Interlock from the link on the Devpost page, as a Jira administrator (workflows are site configuration, so the page is shown to admins only). Then:
 
-1. Open **Apps → Interlock**. It reads and proves every workflow on the site; the lever frame on the left lists the ones with findings, worst first. On a site created from Jira's templates you will see the same defects as in the [template report](docs/atlassian-templates.md).
+1. Open **Apps → Interlock**. It reads and proves every workflow on the site; the lever frame on the left lists the ones with findings, worst first. On a site whose projects were made from older templates you may see findings like those in the [template report](docs/atlassian-templates.md); a brand-new site is likely to be clean, so use the Ship demo to see every feature.
 2. Select a workflow, then a finding. The track diagram lights the bad route and a train runs along it. The lamps show how far the finding is proven: proved, seen in your data, replayed.
 3. Select **Replay on a new work item**. Interlock walks a new work item down the route through Jira and reads back the status and resolution after each step. Delete the item afterwards with the button next to it.
 4. On a resolution finding, select **Check the fix with Jira**, then **Apply**. The site is proved again and the lamp turns green. **Undo** puts the workflow back.

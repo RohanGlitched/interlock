@@ -1,12 +1,18 @@
-# Resolution defects in Jira's template workflows
+# Resolution defects in template-made workflows
 
 We ran Interlock on an Atlassian demo site on Nov 1, 2026, before we added anything to it. The site came with sample projects made from Jira's own templates: IT service management, HR, facilities, legal, marketing, procurement, design and security operations.
 
 Interlock checked 97 workflows and 761 transitions. **29 workflows have routes that leave the resolution wrong**, and **78 work items in the sample projects were already in that wrong state.**
 
-**13 of the 29 are copies of Jira Service Management's own template workflows**, named as Jira names them ("Change Management workflow for Jira Service Management"). The Change Management template alone appears in six projects with the same five findings. A team that creates a service project from that template gets the same routes, unless it edits the workflow. We checked this on one demo site; we have not yet created each template on a fresh site to confirm the template itself rather than this site's copy. The other 16 are business-template and sample workflows that came with the demo site; their findings are real for this site but should not be read as product defects.
+**13 of the 29 are copies of Jira Service Management's template workflows**, named as Jira names them ("Change Management workflow for Jira Service Management"). The Change Management copy appears in six projects with the same five findings. The other 16 are business-template and sample workflows that came with the demo site.
 
-The work-item counts come from the site's seeded sample data, so they show that the routes are used, not how often real teams hit them.
+### Is it the template itself? We checked: today's template is clean
+
+To find out, we created a new IT service management project (TPL) from Jira's template on the same site on Nov 1, 2026, and proved its six new workflows. **None has a finding.** Comparing the two Change Management workflows shows why: the six older copies have a "Back to review" transition out of Declined that keeps the resolution, and "Mark as canceled" transitions; today's template has neither (it uses "Cancel", and Declined has no way back).
+
+So the defect is in projects made from an earlier version of the template, or edited since. That is the real lesson for admins: **a fix to a template never reaches the projects already made from it**, and nothing in Jira tells you which of your workflows still carry the old routes. Interlock does, and it proves each one.
+
+The work-item counts come from the site's seeded sample data, so they show that these routes are used, not how often real teams hit them.
 
 ## What goes wrong
 
@@ -15,7 +21,7 @@ Jira decides whether work is finished by its **resolution**, not its status. Fil
 - **Done but unresolved:** a route reaches a done status without setting a resolution, so finished work keeps counting as open.
 - **Reopened but still resolved:** a route takes work out of a done status without clearing the resolution, so open work counts as finished and keeps its old resolved date.
 
-## Jira Service Management template workflows with findings
+## Workflows made from Jira Service Management templates, with findings
 
 | Template workflow | Projects on the demo site using a copy | Finding | Statuses affected |
 |---|---|---|---|
