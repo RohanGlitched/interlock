@@ -247,7 +247,8 @@ export async function watch() {
   const report = checkSite(await loadSite({ asApp: true, fresh: true }), (await kvs.get('rules')) || {});
   const { changes } = await recordProof(report, 'daily watch');
   console.log(`Interlock watch: ${report.results.length} workflows, ${changes.length} changes since the last proof`);
-  await reportNew(changes).catch((e) => console.warn(`Interlock watch: could not report new findings (${String(e.message).slice(0, 120)})`));
+  // a report that could not be made is shown on the page with Jira's reason, never only in the logs
+  await reportNew(changes).catch((e) => kvs.set('watch:notified', { at: new Date().toISOString(), error: String(e.message).slice(0, 200) }).catch(() => {}));
 }
 
 // New findings the watch saw are reported as one work item in the project an admin chose, so a workflow edit that

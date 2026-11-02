@@ -858,7 +858,7 @@ function Watch({ stamp, projects = [] }) {
         {w.history?.length > 0 && <span className="il-watch-more">Show history</span>}
       </summary>
       <div className="il-watch-notify">
-        {w.notify ? <p>New findings are reported as a work item in <b>{w.notify.projectKey}</b> (set by {w.notify.by}).{w.notified ? ` Last report: ${w.notified.key}, ${when(w.notified.at)}.` : ''}{' '}
+        {w.notify ? <p>New findings are reported as a work item in <b>{w.notify.projectKey}</b> (set by {w.notify.by}).{w.notified?.key ? ` Last report: ${w.notified.key}, ${when(w.notified.at)}.` : w.notified?.error ? ` The last report could not be made (${w.notified.error}); Interlock's app user needs permission to create work items there.` : ''}{' '}
           <button className="il-link" disabled={busy} onClick={() => { setBusy(true); invoke('setWatchNotify', { projectKey: null }).then((r) => setW({ ...w, notify: r.notify })).finally(() => setBusy(false)); }}>Stop reporting</button></p>
           : <p><label>Report new findings as a work item in{' '}
             <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Project for the watch's reports">
