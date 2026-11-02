@@ -104,11 +104,14 @@ export function trackPath(a, b, lane = 0, vertical = false, floor = null) {
     const dx = (x2 - x1) * 0.5;
     return `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
   }
-  const sx = a.x + BLOCK_W / 2 + 18, sy = a.y + BLOCK_H, ex = b.x + BLOCK_W / 2 - 18, ey = b.y + BLOCK_H;
-  // back along its own row (or the row below) dips just under it; further back, it runs in a lane under the lowest row
-  const near = Math.abs(sy - ey) < 4 && Math.abs(a.x - b.x) <= 260;
-  const dip = (near || floor == null ? Math.max(sy, ey) + 24 : floor + 18) + lane * 8;
-  return `M${sx},${sy} C${sx},${dip} ${sx},${dip} ${(sx + ex) / 2},${dip} S${ex},${dip} ${ex},${ey}`;
+  // back: out of the source's left side into the gap before its column, down the gap to a lane under the lowest row,
+  // along it, up the gap before the target's column, into the target's left side. Gaps and the lane hold no blocks,
+  // so a track running back never passes through a status it does not belong to.
+  const gap = (COL - BLOCK_W) / 2, sy = a.y + BLOCK_H / 2 + 7, ey = b.y + BLOCK_H / 2 + 7;
+  const gx1 = a.x - gap + 6 - lane * 5, gx2 = b.x - gap - 6 + lane * 5;
+  if (Math.abs(a.x - b.x) < 4) return `M${a.x},${sy} L${gx1},${sy} L${gx1},${ey} L${b.x},${ey}`;
+  const fy = (floor ?? Math.max(a.y, b.y) + BLOCK_H) + 16 + lane * 7;
+  return `M${a.x},${sy} L${gx1},${sy} L${gx1},${fy} L${gx2},${fy} L${gx2},${ey} L${b.x},${ey}`;
 }
 
 // A "from any status" transition drops from the overhead rail onto the top of its block.
