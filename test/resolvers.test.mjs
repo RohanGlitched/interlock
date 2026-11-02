@@ -69,3 +69,45 @@ test('one report a day, and a refused report is shown with the reason and tried 
   await watch();
   assert.equal(S.created.length, 1);
 });
+
+// ---------- the fix: check with Jira, apply, undo ----------
+const F = { wf: null, updates: 0, failUpdate: false };
+const fixWf = () => ({ id: 'w2', name: 'Ship', version: { versionNumber: 1 }, statuses: ['1', '2', '3'].map((s) => ({ statusReference: s })),
+  transitions: [{ id: '0', type: 'INITIAL', toStatusReference: '1', actions: [] }, tr('1', 'Start', ['1'], '2'), tr('2', 'Finish', ['2'], '3')] });
+const base = globalThis.JIRA;
+globalThis.JIRA = async (path, init) => {
+  if (path === '/rest/api/3/workflows' && init?.method === 'POST') return { workflows: [structuredClone(F.wf)] };
+  if (path.startsWith('/rest/api/3/statuses?')) return [{ id: '1', name: 'To Do', statusCategory: 'TODO' }, { id: '2', name: 'In Progress', statusCategory: 'IN_PROGRESS' }, { id: '3', name: 'Done', statusCategory: 'DONE' }];
+  if (path.includes('/resolution/search')) return { values: [{ id: '10000', name: 'Done' }] };
+  if (path.includes('/workflows/update/validation')) return { errors: [] };
+  if (path.includes('/workflows/update')) {
+    if (F.failUpdate) return { __status: 409, body: { errorMessages: ['The workflow changed'] } };
+    F.updates++; F.wf.transitions = JSON.parse(init.body).workflows[0].transitions; return {};
+  }
+  return base(path, init);
+};
+const fix = (mode) => defs.fix({ ...ctx, payload: { workflowId: 'w2', property: 'doneUnresolved', status: '3', mode } });
+const setsResolution = () => F.wf.transitions.find((t) => t.id === '2').actions.some((a) => a.parameters?.field === 'resolution' && a.parameters.value);
+
+test('a fix is checked with Jira first, applied only on Apply, and undone exactly', async () => {
+  fresh(); Object.assign(F, { wf: fixWf(), updates: 0, failUpdate: false });
+  const check = await fix(undefined);
+  assert.deepEqual(check.changed, ['Finish']);
+  assert.equal(check.valid, true);
+  assert.equal(F.updates, 0);
+  await fix('apply');
+  assert.equal(setsResolution(), true);
+  await fix('undo');
+  assert.equal(setsResolution(), false);
+  assert.equal(globalThis.KV.get('fixes')?.['w2|doneUnresolved|3'], undefined);
+});
+
+test('a fix Jira refuses leaves no Undo record; Undo refuses to overwrite a later edit', async () => {
+  fresh(); Object.assign(F, { wf: fixWf(), updates: 0, failUpdate: true });
+  await assert.rejects(fix('apply'), /409/);
+  assert.deepEqual(Object.keys(globalThis.KV.get('fixes') || {}), []);
+  F.failUpdate = false;
+  await fix('apply');
+  F.wf.transitions.find((t) => t.id === '2').actions.push({ ruleKey: 'system:assign', parameters: {} }); // someone edits it since
+  await assert.rejects(fix('undo'), /edited since/);
+});
