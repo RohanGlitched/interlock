@@ -442,8 +442,8 @@ function Diagram({ model, result, focus }) {
         })}
       </svg>
       {route.length > 0 && (
-        <p className="il-route-strip" aria-label="The lit route">
-          <b>{focus?.route?.startName}</b>{route.map((h, i) => <span key={i}> <i>{h.transition}</i> → <b>{h.toName}</b></span>)}
+        <p className="il-route-strip">
+          <span className="il-sr">The lit route: </span><b>{focus?.route?.startName}</b>{route.map((h, i) => <span key={i}> <i>{h.transition}</i> → <b>{h.toName}</b></span>)}
           {focus?.title ? <em> · {focus.title.toLowerCase()}</em> : null}
         </p>
       )}

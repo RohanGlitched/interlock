@@ -334,3 +334,6 @@ button, select { font: inherit; color: inherit; }
 @media (max-width: 1100px) { .il-tiers { flex-direction: column; flex-wrap: nowrap; border-radius: 8px; gap: 4px; padding: 8px 12px; } }
 /* every action in the table reads as a panel button */
 .il-table .il-btn:not(.primary) { border: 1px solid var(--il-panel-block); font-weight: 700; }
+
+/* read by screen readers, not shown */
+.il-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

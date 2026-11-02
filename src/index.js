@@ -121,7 +121,7 @@ export function checkSite(site, rules = {}) {
   const results = site.workflows.map((w) => {
     const teamManaged = w.scope?.type === 'PROJECT' && tm.has(w.scope.project?.id);
     const r = verify(w, statuses, { screenHasResolution: screens, unreadableScreens, teamManaged, mustPass: rules[w.id] || [] });
-    return { ...r, teamManaged, usage: site.usage[w.name] || [], scope: w.scope };
+    return { ...r, teamManaged, usage: site.usage[w.name] || [], scope: w.scope, rules: (rules[w.id] || []).map(ruleKey) };
   });
   return { checkedAt: new Date().toISOString(), ms: Date.now() - t0, results, unreadableScreens: site.unreadableScreens || 0 };
 }
@@ -192,12 +192,18 @@ export async function measure(site, report) {
 // Every proof (the daily scheduled one, and every check an admin runs) is compared with the previous one.
 // A finding that appears is a regression someone introduced by editing a workflow; one that disappears
 // was fixed. The last 60 changes are kept so the page can say what changed and when.
-const findingKey = (f) => `${f.property}|${f.subject || ''}`;
+// a rule is known by the two statuses it names, so a broken rule is the same finding across renames
+const ruleKey = (rule) => `${rule.target}>${rule.via}`;
+const findingKey = (f) => (f.rule ? `${f.property}|rule:${ruleKey(f.rule)}` : `${f.property}|${f.subject || ''}`);
 function snapshotOf(report) {
-  // only workflows with findings are kept, so the snapshot stays small on a site with thousands of workflows
-  const own = (r) => r.findings.filter((f) => f.property !== 'mustPass' && f.property !== 'ruleStale');
-  return Object.fromEntries(report.results.filter((r) => own(r).length).map((r) => [r.workflow.id, { name: r.workflow.name, findings: own(r).map((f) => ({ key: findingKey(f), title: f.title, subject: f.subject })) }]));
+  // only workflows with findings or rules are kept, so the snapshot stays small on a site with thousands of workflows
+  return Object.fromEntries(report.results.filter((r) => r.findings.length || r.rules?.length).map((r) => [r.workflow.id, {
+    name: r.workflow.name, rules: r.rules || [],
+    findings: r.findings.map((f) => ({ key: findingKey(f), title: f.title, subject: f.subject, ...(f.rule ? { rule: ruleKey(f.rule) } : {}) })),
+  }]));
 }
+// a rule's finding is a change only while the rule was checked both times: saving or removing a rule is not news
+const comparable = (f, a, b) => !f.rule || ((a?.rules || []).includes(f.rule) && (b?.rules || []).includes(f.rule));
 export async function recordProof(report, by) {
   const snap = snapshotOf(report), prev = await kvs.get('watch:snapshot');
   const at = new Date().toISOString(), changes = [];
@@ -206,11 +212,11 @@ export async function recordProof(report, by) {
   if (prev && !report.unreadableScreens) {
     for (const [id, cur] of Object.entries(snap)) {
       const before = new Set((prev[id]?.findings || []).map((f) => f.key));
-      for (const f of cur.findings) if (!before.has(f.key)) changes.push({ kind: 'new', workflow: cur.name, title: f.title, subject: f.subject });
+      for (const f of cur.findings) if (!before.has(f.key) && comparable(f, prev[id], cur)) changes.push({ kind: 'new', workflow: cur.name, title: f.title, subject: f.subject });
     }
     for (const [id, old] of Object.entries(prev)) {
       const now = new Set((snap[id]?.findings || []).map((f) => f.key));
-      for (const f of old.findings) if (!now.has(f.key)) changes.push({ kind: 'fixed', workflow: old.name, title: f.title, subject: f.subject });
+      for (const f of old.findings) if (!now.has(f.key) && comparable(f, old, snap[id])) changes.push({ kind: 'fixed', workflow: old.name, title: f.title, subject: f.subject });
     }
   }
   // the snapshot is written first, so a failure later can never leave the watch diffing an old proof; on a

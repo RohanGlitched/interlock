@@ -90,14 +90,22 @@ export function tracks(model) {
 // floor: the bottom edge of the lowest block; tracks that run back go round underneath every block, not through them
 export function trackPath(a, b, lane = 0, vertical = false, floor = null) {
   if (vertical) {
-    // top to bottom: leave the bottom edge, enter the top edge; tracks that run back loop round the right
+    // top to bottom: leave the bottom edge, enter the top edge. One row down crosses only the gap between rows;
+    // a longer track runs in the gaps (between rows, then down between columns), which hold no blocks.
+    const rgap = (VROW - BLOCK_H) / 2, cgap = (VCOL - BLOCK_W) / 2;
     if (b.y > a.y + 4) {
-      const x1 = a.x + BLOCK_W / 2 + lane * 8 - 12, y1 = a.y + BLOCK_H, x2 = b.x + BLOCK_W / 2 + lane * 8 - 12, y2 = b.y, dy = (y2 - y1) * 0.5;
-      return `M${x1},${y1} C${x1},${y1 + dy} ${x2},${y2 - dy} ${x2},${y2}`;
+      const x1 = a.x + BLOCK_W / 2 + lane * 8 - 12, y1 = a.y + BLOCK_H, x2 = b.x + BLOCK_W / 2 + lane * 8 - 12, y2 = b.y;
+      if (b.y - a.y < VROW + 4) { const dy = (y2 - y1) * 0.5; return `M${x1},${y1} C${x1},${y1 + dy} ${x2},${y2 - dy} ${x2},${y2}`; }
+      const gy1 = y1 + rgap - 4 + lane * 4, gy2 = y2 - rgap + 4 - lane * 4, gx = b.x - cgap - 4 + lane * 3;
+      return `M${x1},${y1} L${x1},${gy1} L${gx},${gy1} L${gx},${gy2} L${x2},${gy2} L${x2},${y2}`;
     }
-    const sx = a.x + BLOCK_W, sy = a.y + BLOCK_H / 2 + 6, ex = b.x + BLOCK_W, ey = b.y + BLOCK_H / 2 - 6;
-    const bulge = Math.max(sx, ex) + 22 + lane * 9;
-    return `M${sx},${sy} C${bulge},${sy} ${bulge},${ey} ${ex},${ey}`;
+    // back: out of the right side into the gap beside the column, up it, along the gap above the target's row when
+    // the target is in another column, and into the target's right side
+    const sy = a.y + BLOCK_H / 2 + 6, ey = b.y + BLOCK_H / 2 - 6;
+    const gx1 = a.x + BLOCK_W + cgap - 4 + lane * 3, gx2 = b.x + BLOCK_W + cgap - 4 + lane * 3;
+    if (Math.abs(a.x - b.x) < 4) return `M${a.x + BLOCK_W},${sy} L${gx1},${sy} L${gx1},${ey} L${b.x + BLOCK_W},${ey}`;
+    const gy = b.y - rgap + 6 + lane * 3;
+    return `M${a.x + BLOCK_W},${sy} L${gx1},${sy} L${gx1},${gy} L${gx2},${gy} L${gx2},${ey} L${b.x + BLOCK_W},${ey}`;
   }
   const x1 = a.x + BLOCK_W, y1 = a.y + BLOCK_H / 2, x2 = b.x, y2 = b.y + BLOCK_H / 2;
   if (x2 > x1 + 4) {

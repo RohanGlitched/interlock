@@ -25,9 +25,13 @@ test('no track passes through a status it does not belong to', () => {
   const transitions = [{ id: '0', type: 'INITIAL', toStatusReference: '1' }, tr('1', ['1'], '2'), tr('2', ['1'], '3'), tr('3', ['2'], '4'), tr('4', ['3'], '4'), tr('5', ['4'], '6'),
     tr('6', ['4'], '7'), tr('7', ['6'], '2'), tr('8', ['7'], '3'), tr('9', ['4'], '1'), tr('10', ['6'], '1'), tr('11', [], '7', 'GLOBAL'), tr('12', [], '5', 'GLOBAL')];
   const m = buildModel({ id: 'w', name: 'W', statuses: ids.map((s) => ({ statusReference: s })), transitions }, statuses);
-  const { pos } = layout(m);
-  const floor = Math.max(...[...pos.values()].map((p) => p.y)) + BLOCK_H;
-  const through = (pts, own) => pts.some(([x, y]) => [...pos].some(([id, p]) => !own.has(id) && x > p.x + 2 && x < p.x + BLOCK_W - 2 && y > p.y + 2 && y < p.y + BLOCK_H - 2));
-  tracks(m).forEach((t, k) => assert.equal(through(sample(trackPath(pos.get(t.from), pos.get(t.to), k % 4, false, floor)), new Set([t.from, t.to])), false, `${t.from} to ${t.to}`));
-  m.transitions.filter((t) => t.type === 'GLOBAL').forEach((t, k) => assert.equal(through(sample(globalPath(pos.get(t.to), k)), new Set([t.to])), false, `global to ${t.to}`));
+  // the same diagram left to right and top to bottom
+  for (const vertical of [false, true]) {
+    const { pos } = layout(m, vertical);
+    const floor = Math.max(...[...pos.values()].map((p) => p.y)) + BLOCK_H;
+    const through = (pts, own) => pts.some(([x, y]) => [...pos].some(([id, p]) => !own.has(id) && x > p.x + 2 && x < p.x + BLOCK_W - 2 && y > p.y + 2 && y < p.y + BLOCK_H - 2));
+    const how = vertical ? 'top to bottom' : 'left to right';
+    tracks(m).forEach((t, k) => assert.equal(through(sample(trackPath(pos.get(t.from), pos.get(t.to), k % 4, vertical, floor)), new Set([t.from, t.to])), false, `${how}: ${t.from} to ${t.to}`));
+    m.transitions.filter((t) => t.type === 'GLOBAL').forEach((t, k) => assert.equal(through(sample(globalPath(pos.get(t.to), k, vertical)), new Set([t.to])), false, `${how}: global to ${t.to}`));
+  }
 });
