@@ -354,3 +354,13 @@ test('rules: finished work that comes back to an open target must pass the requi
     tr('7', 'Escalate', ['4'], '6', { actions: clearRes }), tr('8', 'Patch release', ['6'], '5')], ['1', '2', '3', '5', '6', '4']);
   assert.equal(ruleVerdict(buildModel(w, st), { target: '5', via: '3' }).verdict, 'broken');
 });
+
+test('rules: a target after a done status, and moves between done statuses, keep the pass', () => {
+  const st = new Map([['1', { name: 'Open', category: 'TODO' }], ['2', { name: 'Code review', category: 'IN_PROGRESS' }], ['3', { name: 'Resolved', category: 'DONE' }],
+    ['4', { name: 'Closed', category: 'DONE' }], ['5', { name: 'Reopened', category: 'TODO' }], ['6', { name: 'Verification', category: 'IN_PROGRESS' }]]);
+  const w = wf([tr('1', 'Review', ['1'], '2'), tr('2', 'Resolve', ['2'], '3', { actions: setRes }), tr('3', 'Close', ['3'], '4'), tr('4', 'Reopen', ['3', '4'], '5', { actions: clearRes }),
+    tr('5', 'Verify', ['3'], '6'), tr('6', 'Back', ['5'], '1')], ['1', '2', '3', '4', '5', '6']);
+  const m = buildModel(w, st);
+  assert.equal(ruleVerdict(m, { target: '6', via: '2' }).verdict, 'holds'); // Code review -> Resolved -> Verification
+  assert.equal(ruleVerdict(m, { target: '5', via: '3' }).verdict, 'holds'); // Resolved -> Closed -> Reopened
+});

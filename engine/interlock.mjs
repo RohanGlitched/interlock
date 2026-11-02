@@ -121,7 +121,8 @@ export function explore(model, { skip = null } = {}) {
 function exploreRule(model, target, via) {
   const cat = new Map(model.statuses.map((s) => [s.id, s.category]));
   const usable = model.transitions.filter(usableBySomeone);
-  const k3 = (s, r, p) => `${s}|${r ? 1 : 0}|${p ? 1 : 0}`;
+  // a: work has reached the target since it last passed the required status (only then can reopening undo the pass)
+  const k3 = (s, r, p, a = false) => `${s}|${r ? 1 : 0}|${p ? 1 : 0}|${a ? 1 : 0}`;
   const names = new Map(model.statuses.map((s) => [s.id, s.name]));
   // the statuses from which work can still reach the required status without going through the target
   const upstream = new Set([via]);
@@ -129,7 +130,7 @@ function exploreRule(model, target, via) {
     grew = false;
     for (const t of usable) if (upstream.has(t.to)) for (const f of t.from) if (f !== target && !upstream.has(f)) { upstream.add(f); grew = true; }
   }
-  const start = { s: model.initial, r: false, p: model.initial === via };
+  const start = { s: model.initial, r: false, p: model.initial === via, a: false };
   const seen = new Map([[k3(start.s, start.r, start.p), { ...start, prev: null, via: null }]]);
   const queue = [start];
   // work created straight into the target has not passed the required status
@@ -146,19 +147,21 @@ function exploreRule(model, target, via) {
       // done target, finished work that is reopened (done to open) has to pass it again before it finishes again;
       // for an open target (Deploy), work sent back upstream of the required status (Deploy to Rework, from where
       // Review can be reached again) has to pass it again; a side trip that cannot (QA to Blocked and back) is a pause
-      // (finished work reopened, whatever the target; for an open target, leaving the required done status itself has just passed it)
-      const reopened = cat.get(cur.s) === 'DONE' && cat.get(t.to) !== 'DONE' && (cat.get(target) === 'DONE' || cur.s !== via);
+      // (finished work reopened: for a done target always; for an open target only once work has reached the target since
+      // the pass, so Code review -> Resolved -> Verification and Resolved -> Closed -> Reopened keep their pass)
+      const reopened = cat.get(cur.s) === 'DONE' && cat.get(t.to) !== 'DONE' && (cat.get(target) === 'DONE' || cur.a);
       // (a step or status named as rework, "Rework", "Send back", "Failed", counts as going back even when it returns direct)
       // (a status with a step straight back into the target, Blocked -> Deploy, is a pause even if it could also restart)
       const backDirect = usable.some((x) => x.to === target && x.from.includes(t.to));
       const leftTarget = cat.get(target) !== 'DONE' && cur.s === target && t.to !== target
         && ((upstream.has(t.to) && !backDirect) || REWORK.test(t.name || '') || REWORK.test(names.get(t.to) || ''));
       const p = t.to === via ? true : reopened || leftTarget ? false : cur.p;
-      const k = k3(t.to, r, p);
+      const a = t.to === via ? false : t.to === target ? p : cur.a && !(reopened || leftTarget);
+      const k = k3(t.to, r, p, a);
       if (seen.has(k)) continue;
-      seen.set(k, { s: t.to, r, p, prev: k3(cur.s, cur.r, cur.p), via: t });
+      seen.set(k, { s: t.to, r, p, a, prev: k3(cur.s, cur.r, cur.p, cur.a), via: t });
       if (t.to === target && !p) { hit = k; break; }
-      queue.push({ s: t.to, r, p });
+      queue.push({ s: t.to, r, p, a });
     }
   }
   return { seen, hit };
