@@ -13,7 +13,8 @@ async function devInvoke(fn, payload = {}) {
     const results = d.workflows.map((w) => ({ ...verify(w, statuses, { mustPass: payload.rules?.[w.id] || [] }), teamManaged: false, usage: [{ project: (/^([A-Z][A-Z0-9_]{1,11}): /.exec(w.name) || [])[1] || 'DESIGN', issueType: null }], scope: w.scope }));
     return {
       checkedAt: new Date().toISOString(), ms: Math.round(performance.now() - t0), results,
-      models: Object.fromEntries(d.workflows.map((w) => [w.id, buildModel(w, statuses)])), projects: [],
+      models: Object.fromEntries(d.workflows.map((w) => [w.id, buildModel(w, statuses)])),
+      projects: [...new Set(d.workflows.map((w) => (/^([A-Z][A-Z0-9_]{1,11}): /.exec(w.name) || [])[1]).filter(Boolean))].map((key) => ({ key, name: `${key} project` })),
       intended: JSON.parse(localStorage.getItem('il-intended') || '{}'),
     };
   }
@@ -33,9 +34,14 @@ async function devInvoke(fn, payload = {}) {
     localStorage.setItem('il-intended', JSON.stringify(all));
     return { intended: all };
   }
+  if (fn === 'setWatchNotify') {
+    const notify = payload.projectKey ? { projectKey: payload.projectKey, by: 'You', at: new Date().toISOString() } : null;
+    localStorage.setItem('il-notify', JSON.stringify(notify));
+    return { notify };
+  }
   if (fn === 'watchStatus') {
     const at = new Date(Date.now() - 3 * 3600e3).toISOString();
-    return { last: { at, by: 'daily watch', workflows: 97, withFindings: 29 }, history: [
+    return { notify: JSON.parse(localStorage.getItem('il-notify') || 'null'), notified: null, last: { at, by: 'daily watch', workflows: 97, withFindings: 29 }, history: [
       { at, by: 'daily watch', changes: [{ kind: 'new', workflow: 'ITS: Change Management workflow for Jira Service Management', title: 'Done but unresolved', subject: 'Completed' }] },
       { at: new Date(Date.now() - 27 * 3600e3).toISOString(), by: 'admin', changes: [{ kind: 'fixed', workflow: 'PROC: Procurement Workflow', title: 'Done but unresolved', subject: 'Purchased' }] },
     ] };

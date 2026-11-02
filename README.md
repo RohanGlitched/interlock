@@ -48,7 +48,7 @@ On that demo site (before we added our own Ship and TPL projects), 13 of the 29 
 
 On any site without it, **Add the Ship demo project** builds a seeded demo: a delivery workflow with the shortcuts teams add over time, and 20 work items moved along real routes. Half of its 12 done work items end up unresolved, and the rule *Done only through Code Review* is refuted with the exact route. The demo shows the mechanics; the evidence from real configurations is the [template report](docs/atlassian-templates.md).
 
-**The daily watch** proves every workflow again once a day and compares each proof with the one before, so a workflow edit that opens a bad route shows up as a new finding with the date it appeared.
+**The daily watch** proves every workflow again once a day and compares each proof with the one before, so a workflow edit that opens a bad route shows up as a new finding with the date it appeared. Pick a project under the watch line and new findings are also reported there as a work item.
 
 **Rovo.** The *Workflow interlock* agent answers questions such as *"Can work in Ship reach Done without passing Code Review?"* with a proof or a counterexample route. The same three tools (`check-workflows`, `get-workflow-findings`, `prove-route`) are published as an MCP server, so a coding agent can prove a workflow before and after changing it. [`skills/interlock/SKILL.md`](skills/interlock/SKILL.md) tells an agent how to use them.
 

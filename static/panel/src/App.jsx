@@ -166,7 +166,7 @@ export default function App() {
           <button className="il-link" onClick={() => setNotice(null)}>Dismiss</button>
         </div>
       )}
-      <Watch stamp={report.checkedAt} />
+      <Watch stamp={report.checkedAt} projects={report.projects || []} />
       <div className="il-body">
         <nav className="il-levers" aria-label="Workflows">
           <div className="il-filter" role="group" aria-label="Show">
@@ -839,8 +839,8 @@ const name = (m, id) => m.statuses.find((s) => s.id === id)?.name || id;
 
 // What the watch has seen: when the last proof ran, and the findings that appeared or cleared since the one
 // before. A new finding means someone's workflow edit opened a bad route; a cleared one was fixed.
-function Watch({ stamp }) {
-  const [w, setW] = useState(null);
+function Watch({ stamp, projects = [] }) {
+  const [w, setW] = useState(null), [pick, setPick] = useState(''), [busy, setBusy] = useState(false), [err, setErr] = useState(null);
   useEffect(() => { invoke('watchStatus', {}).then(setW).catch(() => setW(null)); }, [stamp]);
   if (!w?.last) return null;
   const when = (iso) => new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
@@ -857,6 +857,17 @@ function Watch({ stamp }) {
         </span>
         {w.history?.length > 0 && <span className="il-watch-more">Show history</span>}
       </summary>
+      <div className="il-watch-notify">
+        {w.notify ? <p>New findings are reported as a work item in <b>{w.notify.projectKey}</b> (set by {w.notify.by}).{w.notified ? ` Last report: ${w.notified.key}, ${when(w.notified.at)}.` : ''}{' '}
+          <button className="il-link" disabled={busy} onClick={() => { setBusy(true); invoke('setWatchNotify', { projectKey: null }).then((r) => setW({ ...w, notify: r.notify })).finally(() => setBusy(false)); }}>Stop reporting</button></p>
+          : <p><label>Report new findings as a work item in{' '}
+            <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Project for the watch's reports">
+              <option value="">a project…</option>
+              {projects.map((p) => <option key={p.key} value={p.key}>{p.key}: {p.name}</option>)}
+            </select></label>{' '}
+            <button className="il-btn" disabled={!pick || busy} onClick={() => { setBusy(true); setErr(null); invoke('setWatchNotify', { projectKey: pick }).then((r) => setW({ ...w, notify: r.notify })).catch((e) => setErr(e.message || String(e))).finally(() => setBusy(false)); }}>Report there</button>
+            {err && <span className="il-error"> {err}</span>}</p>}
+      </div>
       {w.history?.length > 0 && (
         <ol>
           {w.history.map((h) => (

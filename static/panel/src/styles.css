@@ -345,3 +345,5 @@ button, select { font: inherit; color: inherit; }
 .il-diagram.focused .il-track.back:not(.route), .il-diagram.focused .il-track.global:not(.route) { opacity: 0.08; }
 
 .il-repair { margin: -2px 0 8px 22px; font-size: 13px; color: var(--il-subtle, inherit); }
+
+.il-watch-notify p { margin: 8px 0 4px; font-size: 13px; } .il-watch-notify select { font: inherit; margin: 0 4px; }

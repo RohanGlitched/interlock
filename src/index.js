@@ -247,7 +247,46 @@ export async function watch() {
   const report = checkSite(await loadSite({ asApp: true, fresh: true }), (await kvs.get('rules')) || {});
   const { changes } = await recordProof(report, 'daily watch');
   console.log(`Interlock watch: ${report.results.length} workflows, ${changes.length} changes since the last proof`);
+  await reportNew(changes).catch((e) => console.warn(`Interlock watch: could not report new findings (${String(e.message).slice(0, 120)})`));
 }
+
+// New findings the watch saw are reported as one work item in the project an admin chose, so a workflow edit that
+// opened a bad route reaches a person the next morning. The outcome (the work item, or why not) is shown on the page.
+async function reportNew(changes) {
+  const fresh = changes.filter((c) => c.kind === 'new');
+  const notify = await kvs.get('watch:notify').catch(() => null);
+  if (!fresh.length || !notify?.projectKey) return;
+  const types = await jiraApp(route`/rest/api/3/issue/createmeta/${notify.projectKey}/issuetypes`);
+  const list = (types.issueTypes || types.values || []).filter((t) => !t.subtask);
+  const type = list.find((t) => /^task$/i.test(t.name)) || list[0];
+  if (!type) throw new Error(`no work type in ${notify.projectKey} can be created`);
+  const line = (c) => ({ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: `${c.title}${c.subject ? `, ${c.subject}` : ''} in ${c.workflow}` }] }] });
+  const created = await jiraApp(route`/rest/api/3/issue`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: {
+      project: { key: notify.projectKey }, issuetype: { id: type.id },
+      summary: `Interlock: ${fresh.length} new workflow ${fresh.length === 1 ? 'finding' : 'findings'} since the last proof`,
+      description: { type: 'doc', version: 1, content: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'The daily proof found routes that were not there the day before, usually after a workflow was edited:' }] },
+        { type: 'bulletList', content: fresh.slice(0, 50).map(line) },
+        { type: 'paragraph', content: [{ type: 'text', text: 'Open Interlock (Jira settings, Apps) to see each route, the work items already caught in it, and the fix.' }] },
+      ] },
+    } }),
+  });
+  await kvs.set('watch:notified', { at: new Date().toISOString(), key: created.key, count: fresh.length });
+}
+
+resolver.define('setWatchNotify', async (req) => {
+  await requireAdmin();
+  const key = req.payload?.projectKey ? String(req.payload.projectKey).toUpperCase() : null;
+  if (!key) { await kvs.delete('watch:notify'); return { notify: null }; }
+  if (!/^[A-Z][A-Z0-9_]{0,19}$/.test(key)) throw new Error('That is not a project key.');
+  await jira(route`/rest/api/3/project/${key}`);
+  const me = await jira(route`/rest/api/3/myself`);
+  const notify = { projectKey: key, by: me.displayName, at: new Date().toISOString() };
+  await kvs.set('watch:notify', notify);
+  return { notify };
+});
 
 // A finding an admin has looked at and decided is intended (a pre-approved standard-change shortcut, say)
 // is recorded with who, when and why. It stops counting as a problem but stays visible, and can be undone.
@@ -310,7 +349,7 @@ resolver.define('markIntended', async (req) => {
 
 resolver.define('watchStatus', async () => {
   await requireAdmin();
-  return { last: await kvs.get('watch:last'), history: ((await kvs.get('watch:history')) || []).slice(0, 10) };
+  return { last: await kvs.get('watch:last'), history: ((await kvs.get('watch:history')) || []).slice(0, 10), notify: (await kvs.get('watch:notify')) || null, notified: (await kvs.get('watch:notified')) || null };
 });
 
 resolver.define('checkSite', async (req) => {
