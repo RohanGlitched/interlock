@@ -364,3 +364,13 @@ test('rules: a target after a done status, and moves between done statuses, keep
   assert.equal(ruleVerdict(m, { target: '6', via: '2' }).verdict, 'holds'); // Code review -> Resolved -> Verification
   assert.equal(ruleVerdict(m, { target: '5', via: '3' }).verdict, 'holds'); // Resolved -> Closed -> Reopened
 });
+
+test("a resolution finding whose route runs another app's post-function says so, since that app may set the resolution", () => {
+  const jmwe = [{ ruleKey: 'com.innovalog.jmwe:set-field-value', parameters: {} }];
+  const r = verify(wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Finish', ['2'], '4', { actions: jmwe })], ['1', '2', '4']), statuses);
+  assert.deepEqual(props(r), ['doneUnresolved:Done']);
+  assert.deepEqual(r.findings[0].otherApps, ['Finish']);
+  // Jira's own post-functions are modelled, so they are not flagged
+  const plain = verify(wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Finish', ['2'], '4')], ['1', '2', '4']), statuses);
+  assert.equal(plain.findings[0].otherApps, undefined);
+});

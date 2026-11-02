@@ -133,6 +133,7 @@ button, select { font: inherit; color: inherit; }
 .il-finding-main b { color: var(--il-text); font-size: 14px; }
 .il-finding-body { padding: 0 12px 12px 33px; }
 .il-finding-body > p { margin: 0 0 10px; color: var(--il-subtle); font-size: 13px; }
+.il-finding-body > p.il-otherapps { color: var(--il-amber-text, #7a4d00); background: var(--il-amber-bg, #fff4d6); border-left: 3px solid var(--il-amber, #e2a400); padding: 6px 8px; border-radius: 3px; }
 .il-route { list-style: none; margin: 0 0 12px; padding: 0 0 0 14px; border-left: 3px solid var(--il-red); }
 .il-route li { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; padding: 3px 0; font-size: 13px; }
 .il-route .via { color: var(--il-subtle); }

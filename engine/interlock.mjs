@@ -44,6 +44,8 @@ export function buildModel(workflow, statuses, { screenHasResolution = new Set()
     transitions.push({
       id: t.id, name: t.name, type: t.type, from, to: t.toStatusReference, resolution, screenId,
       conditions: flattenConditions(t.conditions), conditionTree: treeOf(t.conditions), validators: (t.validators || []).map((v) => ({ key: v.ruleKey, params: v.parameters || {} })),
+      // post-functions from other apps (ScriptRunner, JMWE...): Interlock cannot see what they do to the resolution
+      appActions: (t.actions || []).map((a) => a.ruleKey).filter((k) => k && !k.startsWith('system:')),
     });
   }
   return { id: workflow.id, name: workflow.name, statuses: st, transitions, initial, teamManaged };
@@ -293,6 +295,13 @@ export function check(model, { mustPass = [] } = {}) {
     if (!name.has(rule.target) || !name.has(rule.via)) { findings.push({ property: 'ruleStale', rule, subject: `${name.get(rule.target) || 'a removed status'} only through ${name.get(rule.via) || 'a removed status'}` }); continue; }
     const { seen: ruled, hit } = exploreRule(model, rule.target, rule.via);
     if (hit) findings.push({ property: 'mustPass', rule, subject: `${name.get(rule.target)} without ${name.get(rule.via)}`, route: routeTo(ruled, hit, model) });
+  }
+  // a resolution finding whose route runs another app's post-function may already be repaired by that app: say so
+  const byId = new Map(model.transitions.map((t) => [t.id, t]));
+  for (const f of findings) {
+    if ((f.property !== 'doneUnresolved' && f.property !== 'openResolved') || !f.route) continue;
+    const apps = f.route.hops.filter((h) => byId.get(h.transitionId)?.appActions?.length).map((h) => h.transition);
+    if (apps.length) f.otherApps = [...new Set(apps)];
   }
   return findings.map((f, i) => ({ id: `f${i + 1}`, ...PROPERTIES[f.property], ...f }));
 }

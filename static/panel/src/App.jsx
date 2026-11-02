@@ -326,7 +326,8 @@ function Diagram({ model, result, focus }) {
     return fit(v) > fit(h) * 1.15 ? v : h;
   }, [model, frame]);
   // the scale the diagram has when it fits the frame; zoom multiplies it
-  const fitScale = frame ? Math.max(0.55, Math.min(1.7, frame.w / width, (frame.h - 60) / height)) : 0.8;
+  // (never wider than the frame at fit: a wide workflow shrinks to fit, and its labels grow to stay readable)
+  const fitScale = frame ? Math.max(Math.min(0.55, (frame.w - 48) / width), Math.min(1.7, frame.w / width, (frame.h - 60) / height)) : 0.8;
   const order = useMemo(() => { // the order in which the explorer first reaches each status
     const seen = explore(model), first = new Map(); let i = 0;
     for (const n of seen.values()) if (!first.has(n.s)) first.set(n.s, i++);
@@ -399,7 +400,7 @@ function Diagram({ model, result, focus }) {
         <button onClick={() => setZoom((z) => Math.min(4, z + 0.5))} aria-label="Zoom in">+</button>
       </div>
       <svg className={`il-diagram ${route.length ? 'focused' : ''}`} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet"
-        style={zoom > 1 ? { width: width * fitScale * zoom, height: height * fitScale * zoom } : { maxHeight: height * 1.7, maxWidth: width * 1.7, minWidth: width * 0.55 }} role="img" aria-label={`Track diagram of ${result.workflow.name}`}>
+        style={zoom > 1 ? { width: width * fitScale * zoom, height: height * fitScale * zoom } : { maxHeight: height * 1.7, maxWidth: width * 1.7, minWidth: Math.min(width * 0.55, frame ? Math.max(200, frame.w - 48) : width * 0.55) }} role="img" aria-label={`Track diagram of ${result.workflow.name}`}>
         <defs>
           <filter id="il-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.4" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
         </defs>
@@ -537,6 +538,7 @@ function Table({ result, model, focus, setFocus, replays, setReplays, rules, set
               {active && (
                 <div className="il-finding-body">
                   <p>{f.why}</p>
+                  {f.otherApps && <p className="il-otherapps">Another app's post-function runs on {f.otherApps.join(', ')} and may set the resolution, which Interlock cannot read. Replay the route to see what really happens.</p>}
                   {f.route && (
                     <ol className="il-route">
                       <li><span className="st">{f.route.startName}</span><em>created</em></li>

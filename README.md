@@ -8,7 +8,7 @@ Railway signal boxes solved this a century ago with interlocking: the frame phys
 
 It is for Jira administrators and the teams who rely on Jira's numbers: service desks reporting SLAs and change volumes, software teams with review rules, anyone whose release report counts resolved work.
 
-![Interlock lights a bad route in two service-management workflows: a cancelled request left unresolved, and a post-incident review published without approval](docs/media/interlock-routes.gif)
+![Interlock on a live Jira site: the Ship workflow's Close shortcut lights up, a replay confirms it on a new work item, and Jira validates the fix](docs/media/interlock-ship-replay.gif)
 
 ## What it finds
 
@@ -65,7 +65,7 @@ On any site without it, **Add the Ship demo project** builds a seeded demo: a de
 
 ![How Interlock proves, shows and fixes a workflow](docs/architecture/architecture.png)
 
-**What the proof covers:** statuses, directed and global transitions, resolution post-functions, transition screens, condition trees (a condition that depends on who is asking counts as passable unless it allows no one) and approval steps. Automation rules, transition validators (Jira's own and other apps') and other apps' post-functions (ScriptRunner, JMWE and the like) are not in the proof, so a route another app already repairs can still show as a finding. Replay settles it, because it walks the route through Jira and looks again after automation has run, and an admin can mark any route as intended.
+**What the proof covers:** statuses, directed and global transitions, resolution post-functions, transition screens, condition trees (a condition that depends on who is asking counts as passable unless it allows no one) and approval steps. Automation rules, transition validators (Jira's own and other apps') and other apps' post-functions (ScriptRunner, JMWE and the like) are not in the proof, so a route another app already repairs can still show as a finding; when a finding's route runs another app's post-function, Interlock says so on the finding. Replay settles it, because it walks the route through Jira and looks again after automation has run, and an admin can mark any route as intended.
 
 
 - `engine/interlock.mjs` builds a model from `GET /rest/api/3/workflows/search` with transitions expanded:
