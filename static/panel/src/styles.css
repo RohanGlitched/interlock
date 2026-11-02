@@ -340,3 +340,8 @@ button, select { font: inherit; color: inherit; }
 
 /* a narrow frame gives the diagram height, so a long workflow is drawn top to bottom at a readable size */
 @media (max-width: 860px) { .il-diagram-wrap.fit { min-height: 62vh; } }
+
+/* a lit route: the tracks going back and the drops from any status step right back */
+.il-diagram.focused .il-track.back:not(.route), .il-diagram.focused .il-track.global:not(.route) { opacity: 0.08; }
+
+.il-repair { margin: -2px 0 8px 22px; font-size: 13px; color: var(--il-subtle, inherit); }

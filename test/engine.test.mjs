@@ -1,7 +1,7 @@
 // Unit tests for the workflow model checker. Run with: npm test
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { verify, buildModel, usableBySomeone, reopenSteps, ruleVerdict } from '../engine/interlock.mjs';
+import { verify, buildModel, usableBySomeone, reopenSteps, ruleVerdict, ruleRepairs } from '../engine/interlock.mjs';
 import { resolutionFor } from '../engine/resolution.mjs';
 
 const statuses = new Map([
@@ -275,4 +275,16 @@ test('the trace counts routes and marks the ones ending in a flagged status', ()
   assert.equal(waysOf(issues, ['Purchased'], '2024-01-01').beforeSince, 0);
   assert.equal(t.onProvedStatus, 2);
   assert.deepEqual(t.ways.map((w) => [w.count, w.to, w.flagged, w.effect]), [[2, 'Purchased', true, 'resolution left as it was'], [1, 'Rejected', false, 'resolution cleared']]);
+});
+
+test('a broken rule comes with the smallest change that makes it hold, proved over every route', () => {
+  const w = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '4', { actions: setRes }), tr('5', 'Shortcut', ['2'], '4', { actions: setRes })]);
+  const fixes = ruleRepairs(buildModel(w, statuses), { target: '4', via: '3' });
+  assert.equal(fixes[0].change, 'remove "Shortcut" from In Progress to Done');
+  assert.deepEqual(fixes[0].lost, []);
+  // a "from any status" transition into done: run it only from the required status
+  const g = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '4', { actions: setRes }), tr('6', 'Close', null, '4', { actions: setRes })]);
+  assert.ok(ruleRepairs(buildModel(g, statuses), { target: '4', via: '3' }).some((f) => f.change.startsWith('let "Close" run only from Code Review')));
+  // a rule that holds needs nothing
+  assert.deepEqual(ruleRepairs(buildModel(wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '4', { actions: setRes })]), statuses), { target: '4', via: '3' }), []);
 });

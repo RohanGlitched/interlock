@@ -1,7 +1,7 @@
 import Resolver from '@forge/resolver';
 import api, { route, assumeTrustedRoute } from '@forge/api';
 import { kvs } from '@forge/kvs';
-import { verify, buildModel, reopenSteps, ruleVerdict, PROPERTIES } from '../engine/interlock.mjs';
+import { verify, buildModel, reopenSteps, ruleVerdict, ruleRepairs, PROPERTIES } from '../engine/interlock.mjs';
 import { resolutionFor } from '../engine/resolution.mjs';
 import { waysOf } from '../engine/trace.mjs';
 
@@ -759,13 +759,14 @@ async function proveRouteInner(payload) {
   if (!target || !via) return { error: `Use status names from this workflow: ${w.statuses.map((s) => statuses.get(s.statusReference)?.name).join(', ')}.` };
   if (target === via) return { error: 'The status to reach and the status to pass through are the same; name two different statuses.' };
   const r = checkSite({ ...site, workflows: [w] }, { [w.id]: [{ target, via }] }).results[0];
-  const v = ruleVerdict(buildModel(w, statuses, { screenHasResolution: new Set(site.screenHasResolution), unreadableScreens: new Set(site.unreadableScreenIds || []) }), { target, via });
+  const model = buildModel(w, statuses, { screenHasResolution: new Set(site.screenHasResolution), unreadableScreens: new Set(site.unreadableScreenIds || []) });
+  const v = ruleVerdict(model, { target, via });
   if (v.verdict === 'undecided') return { ruleHolds: null, answer: `Interlock cannot say for ${w.name}: ${v.reason}.` };
   const f = r.findings.find((x) => x.property === 'mustPass');
   // `ruleHolds` is about the rule "every route to target passes through"; the answer sentence states the
   // finding plainly so it reads right whichever way the user phrased the question.
   return f
-    ? { ruleHolds: false, canSkip: true, answer: `Work CAN reach ${payload.target} without passing ${payload.through}. The rule "${payload.target} only through ${payload.through}" is broken by this route.`, counterexample: brief(f).route }
+    ? { ruleHolds: false, canSkip: true, answer: `Work CAN reach ${payload.target} without passing ${payload.through}. The rule "${payload.target} only through ${payload.through}" is broken by this route.`, counterexample: brief(f).route, smallestFix: ruleRepairs(model, { target, via }, 1).map((x) => `${x.change} (proved: the rule then holds on every route${x.lost.length ? `; ${x.lost.join(', ')} would no longer be reachable` : ''})`)[0] }
     : { ruleHolds: true, canSkip: false, answer: `Work can NOT reach ${payload.target} without passing ${payload.through}: every route to ${payload.target} goes through ${payload.through} (for a done status, again after finished work is reopened). Interlock searched every route from creation.` };
 }
 

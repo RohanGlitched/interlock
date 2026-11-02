@@ -3,7 +3,7 @@
 // each with the exact route, which can be replayed on a real work item to prove it.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke, openIssue, openPath } from './bridge.js';
-import { check, explore, PROPERTIES, ruleVerdict } from '../../../engine/interlock.mjs';
+import { check, explore, PROPERTIES, ruleVerdict, ruleRepairs } from '../../../engine/interlock.mjs';
 import { layout, tracks, trackPath, globalPath, BLOCK_W, BLOCK_H } from './layout.js';
 
 const reduceMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -808,11 +808,15 @@ function Rules({ model, rules, setRules, findings = [], onShow }) {
       })()}
       {rules.map((r, i) => {
         const f = brokenBy(r), v = ruleVerdict(model, r);
+        const broken = !!f || v.verdict === 'broken', repair = broken && ruleRepairs(model, r, 1)[0];
         return (
-          <p key={i} className="il-rule"><Lamp state={f || v.verdict === 'broken' ? 'red' : v.verdict === 'undecided' ? 'amber' : 'green'} /> Work reaches <b>{name(model, r.target)}</b> only through <b>{name(model, r.via)}</b>:{' '}
+          <div key={i}><p className="il-rule"><Lamp state={f || v.verdict === 'broken' ? 'red' : v.verdict === 'undecided' ? 'amber' : 'green'} /> Work reaches <b>{name(model, r.target)}</b> only through <b>{name(model, r.via)}</b>:{' '}
             {f ? <><b className="il-live">broken</b> <button className="il-link" onClick={() => onShow?.(f)}>Show the route</button></>
               : v.verdict === 'undecided' ? <b>cannot say: {v.reason}</b> : <b>holds on every route</b>}{' '}
             <button className="il-link" onClick={() => setRules(rules.filter((_, j) => j !== i))}>Remove</button></p>
+          {repair && <p className="il-repair">Smallest change that makes it hold: <b>{repair.change}</b>. Interlock proved the rule then holds on every route{repair.lost.length ? `, but ${repair.lost.join(', ')} could no longer be reached` : ', and every status stays reachable'}. Change it in the workflow editor if the team agrees.</p>}
+          {broken && !repair && <p className="il-repair">No single transition change makes it hold: more than one route reaches {name(model, r.target)} without {name(model, r.via)}.</p>}
+          </div>
         );
       })}
       <div className="il-rule-form">
