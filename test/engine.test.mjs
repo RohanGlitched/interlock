@@ -288,3 +288,14 @@ test('a broken rule comes with the smallest change that makes it hold, proved ov
   // a rule that holds needs nothing
   assert.deepEqual(ruleRepairs(buildModel(wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '4', { actions: setRes })]), statuses), { target: '4', via: '3' }), []);
 });
+
+test('a repair that leaves work with no way to finish says so, and ranks after one that does not', () => {
+  // To Do -> In Progress (Start) -> Code Review -> Done, and To Do -> Stuck (Hotfix) -> Done (Ship)
+  const st = new Map([...statuses, ['5', { name: 'Hotfix', category: 'IN_PROGRESS' }]]);
+  const w = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '4', { actions: setRes }),
+    tr('7', 'Hotfix', ['1'], '5'), tr('8', 'Ship', ['5'], '4', { actions: setRes })], ['1', '2', '3', '4', '5']);
+  const fixes = ruleRepairs(buildModel(w, st), { target: '4', via: '3' }, 5);
+  const ship = fixes.find((f) => f.change.startsWith('remove "Ship"'));
+  assert.deepEqual(ship.stranded, ['Hotfix']);
+  assert.ok(fixes.every((f) => f.lost.length + f.stranded.length >= 1));
+});
