@@ -44,7 +44,7 @@ On that demo site (before we added our own Ship and TPL projects), 13 of the 29 
 - The lever frame lists every workflow, worst first, with its findings and the work items already affected.
 - The track diagram draws the selected workflow. A lit train runs along the bad route.
 - The interlocking table lists the findings with their routes, evidence lamps, replay and fix.
-- You can write a rule ("work reaches Done only through Code Review") and Interlock proves or refutes it over every route at once, in the browser.
+- You can write a rule ("work reaches Done only through Code Review") and Interlock proves or refutes it over every route at once, in the browser. A refuted rule comes with the smallest change that makes it hold, itself proved over every route; Interlock suggests it and leaves the edit to the team.
 
 On any site without it, **Add the Ship demo project** builds a seeded demo: a delivery workflow with the shortcuts teams add over time, and 20 work items moved along real routes. Half of its 12 done work items end up unresolved, and the rule *Done only through Code Review* is refuted with the exact route. The demo shows the mechanics; the evidence from real configurations is the [template report](docs/atlassian-templates.md).
 
