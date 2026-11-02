@@ -78,6 +78,8 @@ Interlock is for Jira administrators, because workflows are site configuration.
 
 Interlock changes a workflow only when an admin clicks **Apply** on a fix that Jira has already validated.
 
+**Privacy:** Interlock runs on Atlassian (no egress, no remote backend) and keeps its records only in Forge app storage. See [PRIVACY.md](PRIVACY.md).
+
 ## For judges
 
 Install Interlock from the link on the Devpost page, as a Jira administrator (workflows are site configuration, so the page is shown to admins only). Then:
