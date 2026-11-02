@@ -341,25 +341,33 @@ export function ruleVerdict(model, { target, via }) {
 // over every route. A repair that leaves a status unreachable is listed after those that keep every status reachable.
 // Interlock suggests, it does not apply: restricting who can move work is the team's call.
 export function ruleRepairs(model, rule, max = 3) {
-  if (ruleVerdict(model, rule).verdict !== 'broken') return [];
+  const v = ruleVerdict(model, rule);
+  if (v.verdict !== 'broken') return [];
   const name = new Map(model.statuses.map((s) => [s.id, s.name]));
   const reached = (m) => new Set([...explore(m).values()].map((n) => n.s));
-  const before = reached(model);
+  const stuck = (m) => new Set(check(m).filter((f) => f.property === 'stranded').map((f) => f.status ?? f.subject));
+  const before = reached(model), stuckBefore = stuck(model);
+  // any single change that makes the rule hold must cut the route that breaks it, so only that route's steps are tried
+  const onRoute = new Set((v.route?.hops || []).map((h) => `${h.transitionId}|${h.from}`));
   const tries = [];
   for (const t of model.transitions.filter(usableBySomeone)) {
     if (t.type === 'GLOBAL') {
-      tries.push({ text: `remove "${t.name}" (from any status)`, change: (x) => x.id !== t.id ? x : null });
-      tries.push({ text: `let "${t.name}" run only from ${name.get(rule.via)}, not from any status`, change: (x) => x.id !== t.id ? x : { ...x, type: 'DIRECTED', from: [rule.via] } });
+      if (![...onRoute].some((k) => k.startsWith(`${t.id}|`))) continue;
+      tries.push({ text: `remove "${t.name}" (from any status)`, change: (x) => (x !== t ? x : null) });
+      tries.push({ text: `let "${t.name}" run only from ${name.get(rule.via)}, not from any status`, change: (x) => (x !== t ? x : { ...x, type: 'DIRECTED', from: [rule.via] }) });
     } else for (const f of t.from) {
-      tries.push({ text: `remove "${t.name}" from ${name.get(f)} to ${name.get(t.to)}`, change: (x) => x.id !== t.id ? x : (x.from.length > 1 ? { ...x, from: x.from.filter((y) => y !== f) } : null) });
+      if (!onRoute.has(`${t.id}|${f}`)) continue;
+      tries.push({ text: `remove "${t.name}" from ${name.get(f)} to ${name.get(t.to)}`, change: (x) => (x !== t ? x : (x.from.length > 1 ? { ...x, from: x.from.filter((y) => y !== f) } : null)) });
     }
   }
   const out = [];
   for (const c of tries) {
     const m = { ...model, transitions: model.transitions.map(c.change).filter(Boolean) };
     if (ruleVerdict(m, rule).verdict !== 'holds') continue;
-    const after = reached(m), lost = [...before].filter((s) => !after.has(s)).map((s) => name.get(s));
-    out.push({ change: c.text, lost });
+    const after = reached(m), stuckAfter = stuck(m);
+    const lost = [...before].filter((s) => !after.has(s)).map((s) => name.get(s));
+    const stranded = [...stuckAfter].filter((s) => !stuckBefore.has(s)).map((s) => name.get(s) || s);
+    out.push({ change: c.text, lost, stranded });
   }
-  return out.sort((a, b) => a.lost.length - b.lost.length).slice(0, max);
+  return out.sort((a, b) => a.lost.length + a.stranded.length - (b.lost.length + b.stranded.length)).slice(0, max);
 }

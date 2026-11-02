@@ -52,7 +52,9 @@ async function pool(items, n, fn) { // run fn over items, n at a time
 // what was read is cached, so the next call carries on from there (a resolver call has 25 seconds).
 export async function loadSite({ asApp = false, fresh = false, budgetMs = 0 } = {}) {
   const call = asApp ? jiraApp : jira;
-  const t0 = Date.now(), overBudget = () => budgetMs && Date.now() - t0 > budgetMs;
+  let t0 = Date.now(), wave = 0;
+  // (the budget starts when the screens do, and each call reads at least ten, so every call makes progress)
+  const overBudget = () => budgetMs && wave >= 10 && Date.now() - t0 > budgetMs;
   const pages = async (path, take) => { // follow startAt paging until the last page
     for (let startAt = 0; ;) {
       const page = await call(path(startAt));
@@ -76,7 +78,9 @@ export async function loadSite({ asApp = false, fresh = false, budgetMs = 0 } = 
   const classic = projects.filter((p) => p.style === 'classic');
   const screenIds = [...new Set(workflows.flatMap((w) => w.transitions.map((t) => t.transitionScreen?.parameters?.screenId).filter(Boolean)))].map(String);
   const cached = fresh ? null : await kvs.get('cache:screens').catch(() => null);
-  const known = cached && Date.now() - cached.at < 10 * 60e3 ? cached.screens : {};
+  // a finished read is good for 10 minutes; one still in parts for 30, so a slow large site is never read from the start again
+  const known = cached && (cached.partial ? Date.now() - cached.started < 30 * 60e3 : Date.now() - cached.at < 10 * 60e3) ? cached.screens : {};
+  t0 = Date.now();
   const screens = { ...known };
   const screenErrors = [], unreadable = [], pending = [];
   await Promise.all([
@@ -91,6 +95,7 @@ export async function loadSite({ asApp = false, fresh = false, budgetMs = 0 } = 
     }),
     pool(screenIds.filter((id) => !(id in known)), 10, async (id) => {
       if (overBudget()) { pending.push(id); return; }
+      wave++;
       const tabs = await call(route`/rest/api/3/screens/${id}/tabs`).catch((e) => { screenErrors.push(`${id}: ${e.message}`); return null; });
       // a screen Interlock cannot read is assumed to ask for the resolution: it may hide a finding, but it
       // never invents one; the report says how many screens were unreadable
@@ -105,7 +110,8 @@ export async function loadSite({ asApp = false, fresh = false, budgetMs = 0 } = 
     }),
   ]);
   // the cache keeps the time of its last full read, so every answer in it is at most 10 minutes old
-  await kvs.set('cache:screens', { at: Object.keys(known).length ? cached.at : Date.now(), screens }).catch(() => {});
+  const started = cached?.partial && Object.keys(known).length ? cached.started : Date.now();
+  await kvs.set('cache:screens', pending.length ? { partial: true, started, screens } : { at: Object.keys(known).length && !cached?.partial ? cached.at : Date.now(), screens }).catch(() => {});
   if (pending.length) return { partial: true, screensRead: screenIds.length - pending.length, screensTotal: screenIds.length };
   const screenHasResolution = Object.keys(screens).filter((id) => screens[id]);
   if (screenErrors.length) console.warn(`Interlock: ${screenErrors.length} screen reads failed`);
@@ -259,7 +265,8 @@ const snapshotKeys = (snap) => Object.entries(snap || {}).flatMap(([id, w]) => w
 async function reportNew() {
   const notify = await kvs.get('watch:notify').catch(() => null);
   if (!notify?.projectKey) return;
-  const now = snapshotKeys(await kvs.get('watch:snapshot'));
+  const intended = (await kvs.get('intended').catch(() => null)) || {};
+  const now = snapshotKeys(await kvs.get('watch:snapshot')).filter((f) => !intended[f.k]);
   const reported = new Set((await kvs.get('watch:reported').catch(() => null)) || []);
   const fresh = now.filter((f) => !reported.has(f.k));
   if (!fresh.length) { await kvs.set('watch:reported', now.map((f) => f.k)); return; }
@@ -816,7 +823,7 @@ async function proveRouteInner(payload) {
   // `ruleHolds` is about the rule "every route to target passes through"; the answer sentence states the
   // finding plainly so it reads right whichever way the user phrased the question.
   return f
-    ? { ruleHolds: false, canSkip: true, answer: `Work CAN reach ${payload.target} without passing ${payload.through}. The rule "${payload.target} only through ${payload.through}" is broken by this route.`, counterexample: brief(f).route, smallestFix: ruleRepairs(model, { target, via }, 1).map((x) => `${x.change} (proved: the rule then holds on every route${x.lost.length ? `; ${x.lost.join(', ')} would no longer be reachable` : ''})`)[0] }
+    ? { ruleHolds: false, canSkip: true, answer: `Work CAN reach ${payload.target} without passing ${payload.through}. The rule "${payload.target} only through ${payload.through}" is broken by this route.`, counterexample: brief(f).route, smallestFix: ruleRepairs(model, { target, via }, 1).map((x) => `${x.change} (proved: the rule then holds on every route${x.lost.length ? `; ${x.lost.join(', ')} would no longer be reachable` : ''}${x.stranded.length ? `; work in ${x.stranded.join(', ')} would have no way to finish` : ''})`)[0] }
     : { ruleHolds: true, canSkip: false, answer: `Work can NOT reach ${payload.target} without passing ${payload.through}: every route to ${payload.target} goes through ${payload.through} (for a done status, again after finished work is reopened). Interlock searched every route from creation.` };
 }
 
