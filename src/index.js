@@ -727,7 +727,8 @@ resolver.define('fix', async (req) => {
     const sent = Object.fromEntries(wf.transitions.filter((t) => t.id in before).map((t) => [t.id, t.actions || []]));
     await kvs.set('fixes', { ...fixes, [k]: { workflowId, property, status, statusName: st.find((s) => s.id === status)?.name, before, after: sent, transitions: changed, at: new Date().toISOString(), name: wf.name } });
   }
-  await jira(route`/rest/api/3/workflows/update`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(update) });
+  try { await jira(route`/rest/api/3/workflows/update`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(update) }); }
+  catch (e) { if (mode === 'apply') await kvs.set('fixes', fixes).catch(() => {}); throw e; } // nothing changed: no Undo record for it
   if (mode === 'undo') delete fixes[k];
   else {
     // what Jira actually saved (read back), so a later Undo compares like with like
