@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<defs><radialGradient id="p" cx="0.6" cy="0.35" r="0.9"><stop offset="0" stop-color="#34453B"/><stop offset="0.6" stop-color="#26322B"/><stop offset="1" stop-color="#18211C"/></radialGradient>
+<radialGradient id="gl" cx="0.38" cy="0.35" r="0.65"><stop offset="0" stop-color="#D9FFE9"/><stop offset="0.55" stop-color="#3FDC85"/><stop offset="1" stop-color="#1E8A5A"/></radialGradient>
+<radialGradient id="rl" cx="0.38" cy="0.35" r="0.65"><stop offset="0" stop-color="#FFD0C8"/><stop offset="0.55" stop-color="#FF5544"/><stop offset="1" stop-color="#B42E22"/></radialGradient>
+<filter id="glow" x="-1" y="-1" width="3" height="3"><feGaussianBlur stdDeviation="14"/></filter></defs>
+<rect width="512" height="512" fill="url(#p)"/>
+<g stroke="#E6ECE4" stroke-width="28" stroke-linecap="round" stroke-linejoin="round" fill="none">
+<path d="M70 330 H350"/><path d="M170 330 L262 196 H350"/></g>
+<circle cx="404" cy="330" r="50" fill="#3FDC85" opacity=".5" filter="url(#glow)"/>
+<circle cx="404" cy="330" r="44" fill="url(#gl)" stroke="#0F1612" stroke-width="10"/>
+<circle cx="404" cy="196" r="50" fill="#FF5544" opacity=".42" filter="url(#glow)"/>
+<circle cx="404" cy="196" r="44" fill="url(#rl)" stroke="#0F1612" stroke-width="10"/>
+</svg>
