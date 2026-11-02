@@ -1,0 +1,104 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Interlock architecture</title>
+<style>
+@font-face { font-family: Overpass; src: url(../cover/Overpass.ttf); font-weight: 100 900; }
+:root { --bg: #1d2721; --panel: #26332c; --edge: #3b4a41; --text: #e9efe9; --muted: #a9b8ad; --green: #3ddc84; --red: #ff5544; --amber: #f2b33d; --track: #c9d1c9; }
+* { box-sizing: border-box; margin: 0; }
+html, body { background: var(--bg); }
+body { width: 1200px; font-family: Overpass, sans-serif; color: var(--text); padding: 26px 28px 30px; }
+.title { font-size: 27px; font-weight: 800; margin: 0 0 18px 12px; }
+.title span { font-weight: 400; font-size: 18px; color: var(--muted); margin-left: 12px; }
+.zone { border: 2px dashed #56685c; border-radius: 12px; padding: 30px 20px 20px; position: relative; }
+.zlabel { position: absolute; top: -11px; left: 18px; font-size: 14px; color: var(--muted); background: var(--bg); padding: 0 8px; font-weight: 600; }
+.row { display: grid; align-items: stretch; }
+.r1 { grid-template-columns: 250px 34px 1fr 34px 262px; }
+.r3 { grid-template-columns: 1fr 1fr 1fr; gap: 18px; margin-top: 0; }
+.box { background: var(--panel); border: 1.5px solid var(--edge); border-radius: 8px; padding: 13px 15px; }
+.box h3 { font-size: 18px; font-weight: 800; margin-bottom: 7px; }
+.box h3 small { font-weight: 400; color: var(--muted); font-size: 14px; margin-left: 6px; }
+.box p, .box li { font-size: 15px; line-height: 1.42; color: var(--muted); }
+.box ul { list-style: none; padding: 0; margin-bottom: 8px; }
+.box li { padding-left: 15px; position: relative; margin-bottom: 4px; }
+.box li::before { content: ''; position: absolute; left: 0; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--track); }
+.box b { color: var(--text); }
+.arrow { display: grid; place-items: center; }
+.ladder { display: flex; flex-direction: column; gap: 0; }
+.rung { background: #202b25; border: 1.5px solid var(--edge); border-radius: 8px; padding: 9px 13px; }
+.rung h4 { font-size: 16.5px; margin-bottom: 2px; display: flex; align-items: center; }
+.rung p { font-size: 14px; line-height: 1.36; color: var(--muted); }
+.rung.fix { border-color: var(--green); }
+.down { height: 18px; display: grid; place-items: center; }
+.lamp { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 9px; }
+.g { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.r { background: var(--red); box-shadow: 0 0 8px var(--red); }
+.a { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+.not { border: 1.5px dashed var(--amber); border-radius: 8px; padding: 11px 13px; color: #f3d9a4; font-size: 14.5px; line-height: 1.4; margin-top: 14px; }
+.left { display: flex; flex-direction: column; }
+.store { margin: 0 auto; width: 560px; text-align: center; }
+.mid { display: grid; place-items: center; height: 30px; }
+.fan { height: 34px; }
+</style></head><body>
+<div class="title">Interlock <span>how a workflow is proved, shown and fixed</span></div>
+<div class="zone"><div class="zlabel">Runs on Atlassian: no egress, no remote backend, no AI service in the proof</div>
+
+<div class="row r1">
+  <div class="left">
+    <div class="box">
+      <h3>Your Jira site</h3>
+      <ul>
+        <li>Workflows, statuses and transitions</li>
+        <li>What each transition does to the resolution, and whether its screen asks for one</li>
+        <li>Conditions, approval steps, schemes</li>
+      </ul>
+      <p style="font-size:13.5px">Read through Jira's REST API as the admin; daily, as the app.</p>
+    </div>
+    <div class="not">Not modelled: automation rules and other apps' validators. Replay is how a route is confirmed in a real Jira.</div>
+  </div>
+  <div class="arrow"><svg width="30" height="20"><path d="M2 10 H24" stroke="#c9d1c9" stroke-width="2.4"/><path d="M20 4 L28 10 L20 16 z" fill="#c9d1c9"/></svg></div>
+  <div class="box">
+    <h3>The model checker <small>engine/interlock.mjs, plain JavaScript</small></h3>
+    <p>Every status is a state twice over: with the resolution set and with it empty, plus approval and rule progress. A breadth-first search walks every transition from where work is created, so each finding comes with its <b>shortest route</b>.</p>
+    <svg viewBox="0 0 520 190" width="100%" style="margin-top:10px; display:block">
+      <defs><marker id="mr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#ff5544"/></marker>
+            <marker id="mg" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#c9d1c9"/></marker></defs>
+      <text x="4" y="14" fill="#a9b8ad" font-size="13" font-family="Overpass">The Ship demo workflow, simplified: a shortcut added over time</text>
+      <g font-family="Overpass">
+        <rect x="4" y="30" width="118" height="46" rx="6" fill="#151d18" stroke="#4a5a50" stroke-width="1.5"/>
+        <text x="16" y="50" fill="#e9efe9" font-size="15" font-weight="700">To Do</text><text x="16" y="67" fill="#a9b8ad" font-size="11.5">no resolution</text>
+        <rect x="196" y="30" width="128" height="46" rx="6" fill="#151d18" stroke="#4a5a50" stroke-width="1.5"/>
+        <text x="208" y="50" fill="#e9efe9" font-size="15" font-weight="700">Code Review</text><text x="208" y="67" fill="#a9b8ad" font-size="11.5">no resolution</text>
+        <rect x="396" y="30" width="118" height="46" rx="6" fill="#151d18" stroke="#3ddc84" stroke-width="1.5"/>
+        <text x="408" y="50" fill="#e9efe9" font-size="15" font-weight="700">Done</text><text x="408" y="67" fill="#a9b8ad" font-size="11.5">resolution set</text>
+        <rect x="396" y="122" width="118" height="46" rx="6" fill="#151d18" stroke="#ff5544" stroke-width="2" style="filter: drop-shadow(0 0 6px rgba(255,85,68,.6))"/>
+        <text x="408" y="142" fill="#e9efe9" font-size="15" font-weight="700">Done</text><text x="408" y="159" fill="#ff8a7d" font-size="11.5">no resolution</text>
+        <path d="M122 53 H192" stroke="#c9d1c9" stroke-width="2.2" marker-end="url(#mg)"/>
+        <path d="M324 53 H392" stroke="#c9d1c9" stroke-width="2.2" marker-end="url(#mg)"/>
+        <path d="M63 76 C 70 140, 200 145, 392 145" stroke="#ff5544" stroke-width="3.2" fill="none" marker-end="url(#mr)" style="filter: drop-shadow(0 0 4px rgba(255,85,68,.8))"/>
+        <text x="150" y="168" fill="#ff8a7d" font-size="13">Close (from any status)</text>
+      </g>
+    </svg>
+    <p style="margin-top:4px">The finding: <b style="color:#ff8a7d">done but unresolved</b>, and the rule "Done only through Code Review" is broken.</p>
+  </div>
+  <div class="arrow"><svg width="30" height="20"><path d="M2 10 H24" stroke="#c9d1c9" stroke-width="2.4"/><path d="M20 4 L28 10 L20 16 z" fill="#c9d1c9"/></svg></div>
+  <div class="ladder">
+    <div class="rung"><h4><span class="lamp g"></span>Proved</h4><p>The route exists in the workflow.</p></div>
+    <div class="down"><svg width="16" height="16"><path d="M8 0 V10" stroke="#c9d1c9" stroke-width="2"/><path d="M3 8 L8 15 L13 8 z" fill="#c9d1c9"/></svg></div>
+    <div class="rung"><h4><span class="lamp a"></span>In your data</h4><p>Jira search counts the work items already there; their history shows which step put them there.</p></div>
+    <div class="down"><svg width="16" height="16"><path d="M8 0 V10" stroke="#c9d1c9" stroke-width="2"/><path d="M3 8 L8 15 L13 8 z" fill="#c9d1c9"/></svg></div>
+    <div class="rung"><h4><span class="lamp r"></span>Replayed</h4><p>A new work item walks the route; a second look after automation runs.</p></div>
+    <div class="down"><svg width="16" height="16"><path d="M8 0 V10" stroke="#c9d1c9" stroke-width="2"/><path d="M3 8 L8 15 L13 8 z" fill="#c9d1c9"/></svg></div>
+    <div class="rung fix"><h4>Fix at the cause</h4><p>Jira validates the change, an admin applies it, the site is proved again. Undo restores it.</p></div>
+  </div>
+</div>
+
+<div class="mid"><svg width="16" height="26"><path d="M8 0 V18" stroke="#c9d1c9" stroke-width="2.2"/><path d="M3 16 L8 24 L13 16 z" fill="#c9d1c9"/></svg></div>
+<div class="box store"><h3 style="font-size:16px; margin-bottom:3px">Forge app storage</h3><p>Saved rules, findings marked as intended, applied fixes for Undo, the last proof for the watch</p></div>
+<svg class="fan" width="1116" height="34" style="display:block"><g stroke="#c9d1c9" stroke-width="2.2" fill="none"><path d="M558 0 V12 M184 12 H932 M184 12 V26 M558 12 V26 M932 12 V26"/></g><g fill="#c9d1c9"><path d="M179 24 L184 33 L189 24 z"/><path d="M553 24 L558 33 L563 24 z"/><path d="M927 24 L932 33 L937 24 z"/></g></svg>
+
+<div class="row r3">
+  <div class="box"><h3>Interlock page <small>admins only</small></h3><p>Every workflow, worst first. The track diagram lights the bad route. Rules are proved again in the browser as you write them, and a broken one comes with the smallest change that makes it hold.</p></div>
+  <div class="box"><h3>Daily watch</h3><p>A scheduled trigger proves every workflow again and compares it with the last proof. New findings are reported as one work item in a project an admin picks.</p></div>
+  <div class="box"><h3>Rovo agent and MCP server</h3><p>Three tools, check-workflows, get-workflow-findings and prove-route, answer in Rovo and for any MCP client. An open skill file tells agents how to use them.</p></div>
+</div>
+</div>
+</body></html>

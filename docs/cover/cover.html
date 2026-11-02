@@ -46,12 +46,12 @@ svg.mimic { position: absolute; right: 50px; top: 60px; width: 680px; height: 52
   <h1>Proves what your Jira workflows can actually do.</h1>
   <p class="lede">A model checker for Jira. It explores every state a work item can reach, finds the routes that end stuck, unresolved or past a required review, and shows each one as a route you can replay and fix.</p>
   <dl>
-    <dt>97</dt><dd>workflows on a demo site, proved in 0.1 s</dd>
-    <dt class="red">29</dt><dd>with routes that go wrong; 78 items already wrong</dd>
-    <dt class="red">1,844</dt><dd>done but unresolved on Apache's public Jira</dd>
+    <dt>104</dt><dd>workflows on a demo site, proved in about 0.1 s</dd>
+    <dt class="red">30</dt><dd>with routes that go wrong; 85 items already wrong</dd>
+    <dt class="red">759</dt><dd>items moved to done but unresolved by 114 people on Apache's public Jira</dd>
   </dl>
 </div>
-<div class="foot">Atlassian demo site and issues.apache.org, both counted Nov 1 2026</div>
+<div class="foot">Atlassian demo site and issues.apache.org, counted Nov 2 2026</div>
 
 <svg class="mimic" viewBox="0 0 680 520">
   <defs>
@@ -67,7 +67,7 @@ svg.mimic { position: absolute; right: 50px; top: 60px; width: 680px; height: 52
   <path class="trk" d="M420,200 C470,200 470,280 520,280"/>
   <path class="trk" d="M535,304 L535,396"/>
   <!-- the route that skips Code Review: lit -->
-  <path id="bypass" class="trk route" d="M345,224 C345,330 380,420 460,420"/>
+  <path id="bypass" class="trk route" d="M105,144 C105,330 300,420 460,420"/>
 
   <!-- blocks -->
   <g class="blk" transform="translate(30,96)"><rect width="150" height="48" rx="6"/><circle cx="22" cy="24" r="7"/><text x="40" y="30">To Do</text></g>
@@ -76,10 +76,10 @@ svg.mimic { position: absolute; right: 50px; top: 60px; width: 680px; height: 52
   <g class="blk bad" transform="translate(460,396)"><rect width="150" height="48" rx="6"/><circle cx="22" cy="24" r="7"/><text x="40" y="30">Done</text></g>
 
   <text class="lbl" x="32" y="86">Created here</text>
-  <text class="lbl red" x="250" y="466">Close skips Code Review</text>
+  <text class="lbl red" x="250" y="466">Close (from any status) skips Code Review</text>
   <text class="lbl" x="250" y="488">and sets no resolution: 6 of 12 done work items unresolved</text>
 
   <!-- the train, part way along the bypass -->
-  <circle class="train" r="8" cx="368" cy="352"/>
+  <circle class="train" r="8" cx="266" cy="376"/>
 </svg>
 </body></html>

@@ -8,6 +8,8 @@ Railway signal boxes solved this a century ago with interlocking: the frame phys
 
 It is for Jira administrators and the teams who rely on Jira's numbers: service desks reporting SLAs and change volumes, software teams with review rules, anyone whose release report counts resolved work.
 
+![Interlock: selecting a workflow lights its bad route, and a train runs along it](docs/media/interlock-routes.gif)
+
 ## What it finds
 
 | Property | What it means |
@@ -31,7 +33,7 @@ A proof says what *can* happen. Interlock then takes each finding as far as it c
 2. **In your data.** For resolution findings, Interlock counts the work items in the projects using that workflow that are already in the bad state, using Jira's own search. On an Atlassian demo site on Nov 1, 2026, before we added anything, 29 of its 97 workflows had routes that go wrong and 78 work items in its sample projects were already in a wrong state. (Today the same site, with our own Ship and TPL projects added, has 104 workflows, 30 with findings and 85 work items wrong.) The count is split by status, so each finding shows its own items, and **How did they get there?** reads the history of up to 50 of them and counts the step that put each one there: on the procurement project, 46 of the 50 most recently changed came Accepted → Purchased with the resolution left as it was, the very step the proof flagged (once that step is fixed, the page says the items already there are left over from before). Items created or imported in that state, and steps with no author (migrations, scripts), are counted apart, not blamed on a route.
 3. **Replayed.** One click creates a new work item and walks it down the route through Jira's transitions API, filling in each transition screen the way a person would. It reads back the status and resolution after every step, and once more a few seconds after the last one, so an automation rule that repairs the resolution shows up and the route is reported safe.
 
-Then **fix at the cause**: for resolution findings, Interlock adds *Set resolution* or *Clear resolution* to the transitions involved. Jira validates the change first, and Interlock saves it only when an admin clicks Apply. The whole site is then proved again.
+Then **fix at the cause**: for resolution findings, Interlock adds *Set resolution* or *Clear resolution* to the transitions involved. Jira validates the change first, and Interlock saves it only when an admin clicks Apply. The whole site is then proved again. The workflow's card names every project that uses it, because a fix reaches all of them.
 
 On that demo site (before we added our own Ship and TPL projects), 13 of the 29 workflows with findings are copies of Jira Service Management template workflows; the Change Management workflow has six copies (five in use) with the same five findings, and one was confirmed on a real work item: a declined change sent back to Review stays resolved as Declined. A project created from the same template today does not have that route, so these copies come from an earlier version of the template or were edited after they were made. Either way, nothing in Jira tells an admin which workflows still carry such routes; Interlock does. The full list is in [Resolution defects in template-made workflows](docs/atlassian-templates.md).
 
@@ -54,6 +56,11 @@ On any site without it, **Add the Ship demo project** builds a seeded demo: a de
 
 ## How it works
 
+![How Interlock proves, shows and fixes a workflow](docs/architecture/architecture.png)
+
+**What the proof covers:** statuses, directed and global transitions, resolution post-functions, transition screens, condition trees (a condition that depends on who is asking counts as passable unless it allows no one) and approval steps. Automation rules and other apps' validators are not in the proof; Replay catches them, because it looks again after automation has run, and an admin can mark any route as intended.
+
+
 - `engine/interlock.mjs` builds a model from `GET /rest/api/3/workflows/search` with transitions expanded:
   - statuses with their categories;
   - directed and global transitions;
@@ -61,7 +68,7 @@ On any site without it, **Add the Ship demo project** builds a seeded demo: a de
   - whether its conditions let anyone use it.
 - A breadth-first search over (status, resolution set) states finds every reachable state, with parent links, so every finding comes with its shortest route.
 - Team-managed projects keep the resolution in step with done statuses themselves, and the model knows that.
-- Checking all 97 workflows on that demo site, 761 transitions in all, takes well under 100 ms once the configuration is loaded (the page shows the time it took). Loading it over the REST API takes 10 to 20 seconds the first time on a site that size; later checks reuse the transition-screen answers for 10 minutes and take about half as long. The engine is plain JavaScript with no dependencies, and the page runs it again in the browser whenever you change a rule.
+- Checking all 104 workflows on that demo site, 824 transitions in all, takes 39 to 127 ms once the configuration is loaded (the page shows the time it took). Loading it over the REST API takes 10 to 20 seconds the first time on a site that size; later checks reuse the transition-screen answers for 10 minutes and take about half as long. The engine is plain JavaScript with no dependencies, and the page runs it again in the browser whenever you change a rule.
 
 ## Permissions
 
