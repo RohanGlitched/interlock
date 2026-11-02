@@ -280,8 +280,10 @@ test('the trace counts routes and marks the ones ending in a flagged status', ()
 test('a broken rule comes with the smallest change that makes it hold, proved over every route', () => {
   const w = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '4', { actions: setRes }), tr('5', 'Shortcut', ['2'], '4', { actions: setRes })]);
   const fixes = ruleRepairs(buildModel(w, statuses), { target: '4', via: '3' });
-  assert.equal(fixes[0].change, 'remove "Shortcut" from In Progress to Done');
+  // the step is kept, sent through the required status, before any removal is offered
+  assert.equal(fixes[0].change, 'send "Shortcut" from In Progress to Code Review instead of Done');
   assert.deepEqual(fixes[0].lost, []);
+  assert.ok(fixes.some((f) => f.change === 'remove "Shortcut" from In Progress to Done'));
   // a "from any status" transition into done: run it only from the required status
   const g = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '4', { actions: setRes }), tr('6', 'Close', null, '4', { actions: setRes })]);
   assert.ok(ruleRepairs(buildModel(g, statuses), { target: '4', via: '3' }).some((f) => f.change.startsWith('let "Close" run only from Code Review')));
@@ -297,5 +299,7 @@ test('a repair that leaves work with no way to finish says so, and ranks after o
   const fixes = ruleRepairs(buildModel(w, st), { target: '4', via: '3' }, 5);
   const ship = fixes.find((f) => f.change.startsWith('remove "Ship"'));
   assert.deepEqual(ship.stranded, ['Hotfix']);
-  assert.ok(fixes.every((f) => f.lost.length + f.stranded.length >= 1));
+  // sending Ship through Code Review strands nothing, so it comes first
+  assert.equal(fixes[0].change, 'send "Ship" from Hotfix to Code Review instead of Done');
+  assert.deepEqual([fixes[0].lost, fixes[0].stranded], [[], []]);
 });

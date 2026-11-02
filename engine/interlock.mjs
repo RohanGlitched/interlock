@@ -357,17 +357,23 @@ export function ruleRepairs(model, rule, max = 3) {
       tries.push({ text: `let "${t.name}" run only from ${name.get(rule.via)}, not from any status`, change: (x) => (x !== t ? x : { ...x, type: 'DIRECTED', from: [rule.via] }) });
     } else for (const f of t.from) {
       if (!onRoute.has(`${t.id}|${f}`)) continue;
+      // first the change that keeps the step: send it to the required status instead, so work still gets there, through it
+      if (t.to === rule.target && f !== rule.via) {
+        tries.push({ keeps: true, text: `send "${t.name}" from ${name.get(f)} to ${name.get(rule.via)} instead of ${name.get(t.to)}`,
+          change: (x) => (x !== t ? x : x.from.length > 1 ? [{ ...x, from: x.from.filter((y) => y !== f) }, { ...x, from: [f], to: rule.via }] : { ...x, to: rule.via }) });
+      }
       tries.push({ text: `remove "${t.name}" from ${name.get(f)} to ${name.get(t.to)}`, change: (x) => (x !== t ? x : (x.from.length > 1 ? { ...x, from: x.from.filter((y) => y !== f) } : null)) });
     }
   }
   const out = [];
   for (const c of tries) {
-    const m = { ...model, transitions: model.transitions.map(c.change).filter(Boolean) };
+    const m = { ...model, transitions: model.transitions.flatMap((x) => c.change(x) ?? []) };
     if (ruleVerdict(m, rule).verdict !== 'holds') continue;
     const after = reached(m), stuckAfter = stuck(m);
     const lost = [...before].filter((s) => !after.has(s)).map((s) => name.get(s));
     const stranded = [...stuckAfter].filter((s) => !stuckBefore.has(s)).map((s) => name.get(s) || s);
-    out.push({ change: c.text, lost, stranded });
+    out.push({ change: c.text, lost, stranded, keepsStep: !!c.keeps });
   }
-  return out.sort((a, b) => a.lost.length + a.stranded.length - (b.lost.length + b.stranded.length)).slice(0, max);
+  // fewest statuses cut off or stuck first, and among equals a change that keeps the step before one that removes it
+  return out.sort((a, b) => a.lost.length + a.stranded.length - (b.lost.length + b.stranded.length) || (b.keepsStep ? 1 : 0) - (a.keepsStep ? 1 : 0)).slice(0, max);
 }

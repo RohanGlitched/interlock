@@ -270,12 +270,17 @@ async function reportNew() {
   const reported = new Set((await kvs.get('watch:reported').catch(() => null)) || []);
   const fresh = now.filter((f) => !reported.has(f.k));
   if (!fresh.length) { await kvs.set('watch:reported', now.map((f) => f.k)); return; }
+  const day = new Date().toISOString().slice(0, 10);
+  try { await kvs.set(`watch:report:${day}`, fresh.length, { keyPolicy: 'FAIL_IF_EXISTS', ttl: { value: 2, unit: 'DAYS' } }); }
+  catch (e) { return; } // today's report was already made (or is being made)
   const types = await jiraApp(route`/rest/api/3/issue/createmeta/${notify.projectKey}/issuetypes`);
   const list = (types.issueTypes || types.values || []).filter((t) => !t.subtask);
   const type = list.find((t) => /^task$/i.test(t.name)) || list[0];
   if (!type) throw new Error(`no work type in ${notify.projectKey} can be created`);
   const line = (c) => ({ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: `${c.title}${c.subject ? `, ${c.subject}` : ''} in ${c.workflow}` }] }] });
-  const created = await jiraApp(route`/rest/api/3/issue`, {
+  let created;
+  try {
+    created = await jiraApp(route`/rest/api/3/issue`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ fields: {
       project: { key: notify.projectKey }, issuetype: { id: type.id },
@@ -283,10 +288,12 @@ async function reportNew() {
       description: { type: 'doc', version: 1, content: [
         { type: 'paragraph', content: [{ type: 'text', text: 'The daily proof found routes that were not there the day before, usually after a workflow was edited:' }] },
         { type: 'bulletList', content: fresh.slice(0, 50).map(line) },
+        ...(fresh.length > 50 ? [{ type: 'paragraph', content: [{ type: 'text', text: `and ${fresh.length - 50} more.` }] }] : []),
         { type: 'paragraph', content: [{ type: 'text', text: 'Open Interlock (Jira settings, Apps) to see each route, the work items already caught in it, and the fix.' }] },
       ] },
     } }),
   });
+  } catch (e) { await kvs.delete(`watch:report:${day}`).catch(() => {}); throw e; } // nothing was created: the next run tries again
   await kvs.set('watch:notified', { at: new Date().toISOString(), key: created.key, count: fresh.length });
   // a finding that clears drops out, so one that comes back is reported again
   await kvs.set('watch:reported', now.map((f) => f.k));

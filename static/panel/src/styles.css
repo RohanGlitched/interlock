@@ -358,3 +358,5 @@ button, select { font: inherit; color: inherit; }
 .il-watch-notify select { background: transparent; color: inherit; border: 1px solid rgba(230, 236, 228, 0.3); border-radius: 3px; padding: 1px 4px; }
 .il-watch-notify select option { color: #172b4d; }
 .il-watch-notify .il-btn { padding: 2px 10px; font-size: 12px; }
+
+.il-watch-notify .il-btn:disabled { opacity: 1; background: transparent; color: rgba(230, 236, 228, 0.6); border: 1px solid rgba(230, 236, 228, 0.3); }
