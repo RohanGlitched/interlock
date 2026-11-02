@@ -7,7 +7,9 @@ license: MIT
 # Interlock: proofs about Jira workflows
 
 Interlock is an Atlassian Forge app with an MCP server at `https://mcp.atlassian.com/forge/<interlock-app-id>`
-(a Jira admin enables it under Admin > Apps > Connected apps). It model-checks workflows: every reachable
+(an admin turns on "Expose tools to MCP-compatible apps" under Atlassian Administration > Apps > Sites > your site >
+Connected apps > Interlock; the client then signs in with OAuth 2.1). On a development install the tool names carry a
+`_development` suffix. It model-checks workflows: every reachable
 state, not a sample.
 
 ## Tools

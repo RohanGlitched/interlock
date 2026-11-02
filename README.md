@@ -61,6 +61,10 @@ On any site without it, **Add the Ship demo project** builds a seeded demo: a de
 
 **Rovo.** The *Workflow interlock* agent answers questions such as *"Can work in Ship reach Done without passing Code Review?"* with a proof or a counterexample route. The same three tools (`check-workflows`, `get-workflow-findings`, `prove-route`) are published as an MCP server, so a coding agent can prove a workflow before and after changing it. [`skills/interlock/SKILL.md`](skills/interlock/SKILL.md) tells an agent how to use them.
 
+**From any MCP client.** An admin turns on *Expose tools to MCP-compatible apps* for Interlock (Atlassian Administration > Apps > Sites > your site > Connected apps), and a client connects to `https://mcp.atlassian.com/forge/<interlock-app-id>` with OAuth 2.1, for example `claude mcp add --transport http interlock https://mcp.atlassian.com/forge/<interlock-app-id>`. [`examples/mcp-client`](examples/mcp-client) is a small client on the official MCP TypeScript SDK; its real output on the demo site, proving the Ship rule:
+
+![prove-route called from an MCP client outside Rovo: Work CAN reach Done without passing Code Review, with the counterexample route and the smallest fix](docs/media/mcp-client.png)
+
 ## How it works
 
 ![How Interlock proves, shows and fixes a workflow](docs/architecture/architecture.png)

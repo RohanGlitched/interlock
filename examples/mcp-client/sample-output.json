@@ -1,0 +1,45 @@
+{
+  "endpoint": "https://mcp.atlassian.com/forge/c6e3cd9f-d392-4c9e-b878-c372c23c1c8a",
+  "server": {
+    "name": "integrations-service",
+    "version": "1.0"
+  },
+  "tools": [
+    {
+      "name": "check-workflows_development",
+      "description": "Model-checks every Jira workflow on the site, or one project's, and lists workflows whose routes strand work or leave the resolution wrong."
+    },
+    {
+      "name": "get-workflow-findings_development",
+      "description": "Model-checks one Jira workflow by name and returns which properties hold and every finding with the shortest route that breaks it."
+    },
+    {
+      "name": "prove-route_development",
+      "description": "Proves or refutes that every route to one status passes through another, over all reachable states, with a counterexample route if not."
+    }
+  ],
+  "call": {
+    "name": "prove-route_development",
+    "arguments": {
+      "workflow": "Ship: Software delivery workflow",
+      "target": "Done",
+      "through": "Code Review"
+    }
+  },
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"ruleHolds\":false,\"canSkip\":true,\"answer\":\"Work CAN reach Done without passing Code Review. The rule \\\"Done only through Code Review\\\" is broken by this route.\",\"counterexample\":\"To Do | Close (from any status) -> Done\",\"smallestFix\":\"remove \\\"Close\\\" (from any status) (proved: the rule then holds on every route)\"}"
+      }
+    ],
+    "structuredContent": {
+      "ruleHolds": false,
+      "canSkip": true,
+      "answer": "Work CAN reach Done without passing Code Review. The rule \"Done only through Code Review\" is broken by this route.",
+      "counterexample": "To Do | Close (from any status) -> Done",
+      "smallestFix": "remove \"Close\" (from any status) (proved: the rule then holds on every route)"
+    },
+    "isError": false
+  }
+}
