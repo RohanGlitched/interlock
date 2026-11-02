@@ -346,3 +346,11 @@ test('rules: a pause with a step straight back into the target is not rework, ev
   const f = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '5'), tr('4', 'Failed checks', ['5'], '6'), tr('5', 'Redeploy', ['6'], '5'), tr('9', 'Finish', ['5'], '4', { actions: setRes })], ['1', '2', '3', '5', '6', '4']);
   assert.equal(ruleVerdict(buildModel(f, st), { target: '5', via: '3' }).verdict, 'broken');
 });
+
+test('rules: finished work that comes back to an open target must pass the required status again', () => {
+  const st = new Map([['1', { name: 'To Do', category: 'TODO' }], ['2', { name: 'In Progress', category: 'IN_PROGRESS' }], ['3', { name: 'Review', category: 'IN_PROGRESS' }],
+    ['5', { name: 'Deploy', category: 'IN_PROGRESS' }], ['6', { name: 'Support', category: 'IN_PROGRESS' }], ['4', { name: 'Done', category: 'DONE' }]]);
+  const w = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '5'), tr('9', 'Finish', ['5'], '4', { actions: setRes }),
+    tr('7', 'Escalate', ['4'], '6', { actions: clearRes }), tr('8', 'Patch release', ['6'], '5')], ['1', '2', '3', '5', '6', '4']);
+  assert.equal(ruleVerdict(buildModel(w, st), { target: '5', via: '3' }).verdict, 'broken');
+});

@@ -146,7 +146,8 @@ function exploreRule(model, target, via) {
       // done target, finished work that is reopened (done to open) has to pass it again before it finishes again;
       // for an open target (Deploy), work sent back upstream of the required status (Deploy to Rework, from where
       // Review can be reached again) has to pass it again; a side trip that cannot (QA to Blocked and back) is a pause
-      const reopened = cat.get(target) === 'DONE' && cat.get(cur.s) === 'DONE' && cat.get(t.to) !== 'DONE';
+      // (finished work reopened, whatever the target; for an open target, leaving the required done status itself has just passed it)
+      const reopened = cat.get(cur.s) === 'DONE' && cat.get(t.to) !== 'DONE' && (cat.get(target) === 'DONE' || cur.s !== via);
       // (a step or status named as rework, "Rework", "Send back", "Failed", counts as going back even when it returns direct)
       // (a status with a step straight back into the target, Blocked -> Deploy, is a pause even if it could also restart)
       const backDirect = usable.some((x) => x.to === target && x.from.includes(t.to));
