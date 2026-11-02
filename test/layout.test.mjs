@@ -35,3 +35,29 @@ test('no track passes through a status it does not belong to', () => {
     m.transitions.filter((t) => t.type === 'GLOBAL').forEach((t, k) => assert.equal(through(sample(globalPath(pos.get(t.to), k, vertical)), new Set([t.to])), false, `${how}: global to ${t.to}`));
   }
 });
+
+test('300 random workflows: no track or drop passes through a status, in either direction', () => {
+  // seeded, so the same 300 workflows every run: a creation spine, up to 1.5 extra transitions per status in any
+  // direction, and sometimes a "from any status" transition
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  let drawn = 0;
+  for (let w = 0; w < 300; w++) {
+    const N = 3 + Math.floor(rnd() * 10);
+    const ids = Array.from({ length: N }, (_, i) => String(i + 1));
+    const statuses = new Map(ids.map((id, i) => [id, { name: `S${id}`, category: i === 0 ? 'TODO' : i >= N - 2 ? 'DONE' : 'IN_PROGRESS' }]));
+    const tr = (id, from, to, type = 'DIRECTED') => ({ id, name: `t${id}`, type, toStatusReference: to, links: from.map((f) => ({ fromStatusReference: f })), actions: [] });
+    const ts = [{ id: '0', type: 'INITIAL', toStatusReference: '1' }];
+    for (let i = 1; i < N; i++) ts.push(tr(`c${i}`, [String(1 + Math.floor(rnd() * i))], String(i + 1)));
+    for (let e = 0, E = Math.floor(rnd() * N * 1.5); e < E; e++) ts.push(tr(`e${e}`, [ids[Math.floor(rnd() * N)]], ids[Math.floor(rnd() * N)]));
+    if (rnd() < 0.4) ts.push(tr('g', [], ids[Math.floor(rnd() * N)], 'GLOBAL'));
+    const m = buildModel({ id: 'w', name: 'W', statuses: ids.map((s) => ({ statusReference: s })), transitions: ts }, statuses);
+    for (const vertical of [false, true]) {
+      const { pos } = layout(m, vertical);
+      const floor = Math.max(...[...pos.values()].map((p) => p.y)) + BLOCK_H;
+      const through = (pts, own) => pts.some(([x, y]) => [...pos].some(([id, p]) => !own.has(id) && x > p.x + 2 && x < p.x + BLOCK_W - 2 && y > p.y + 2 && y < p.y + BLOCK_H - 2));
+      tracks(m).forEach((t, k) => { drawn++; assert.equal(through(sample(trackPath(pos.get(t.from), pos.get(t.to), k % 4, vertical, floor)), new Set([t.from, t.to])), false, `workflow ${w}, ${vertical ? 'top to bottom' : 'left to right'}: ${t.from} to ${t.to}`); });
+      m.transitions.filter((t) => t.type === 'GLOBAL').forEach((t, k) => { drawn++; assert.equal(through(sample(globalPath(pos.get(t.to), k, vertical)), new Set([t.to])), false, `workflow ${w}: global to ${t.to}`); });
+    }
+  }
+  assert.ok(drawn > 3000);
+});

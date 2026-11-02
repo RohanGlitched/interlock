@@ -444,7 +444,7 @@ function Diagram({ model, result, focus }) {
       {route.length > 0 && (
         <p className="il-route-strip">
           <span className="il-sr">The lit route: </span><b>{focus?.route?.startName}</b>{route.map((h, i) => <span key={i}> <i>{h.transition}</i> → <b>{h.toName}</b></span>)}
-          {focus?.title ? <em> · {focus.title.toLowerCase()}</em> : null}
+          {focus?.title ? <em>{' · '}{focus.title.toLowerCase()}</em> : null}
         </p>
       )}
       <Legend teamManaged={result.teamManaged} focused={!!focusSet} />

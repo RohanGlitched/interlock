@@ -690,8 +690,22 @@ async function agentReport(site) {
   return report;
 }
 
+// An agent's action has a short time limit. A site too large to read in time is answered from the last saved proof,
+// and the answer says when that proof ran; a single-workflow question asks again once the screens are cached.
+const AGENT_BUDGET_MS = 18000;
+const TOO_SLOW = Symbol('too slow');
+const inTime = (p) => Promise.race([p, new Promise((r) => setTimeout(() => r(TOO_SLOW), AGENT_BUDGET_MS))]);
+async function fromLastProof() {
+  const [last, snap] = await Promise.all([kvs.get('watch:last').catch(() => null), kvs.get('watch:snapshot').catch(() => null)]);
+  if (!last || !snap) return { error: 'This site took too long to read in one answer, and no saved proof exists yet. Open Interlock (Jira settings, Apps) once to prove it, then ask again.' };
+  const rows = Object.values(snap).map((w) => ({ workflow: w.name, findings: w.findings.filter((f) => !f.rule).map((f) => ({ problem: f.title, status: f.subject })) })).filter((w) => w.findings.length);
+  return { fromLastProof: last.at, note: `This site took too long to read in one answer, so this is the last proof, run at ${last.at}. Open Interlock for a fresh one.`, checked: last.workflows, totalWithFindings: rows.length, workflowsWithFindings: rows.slice(0, 50) };
+}
+const slowAnswer = { error: 'This site took too long to read in one answer. Ask again in a minute: the transition screens are cached by then, so the second read is faster.' };
+
 async function checkWorkflowsInner(payload) {
-  const site = await loadSite();
+  const site = await inTime(loadSite());
+  if (site === TOO_SLOW) return payload?.projectKey ? slowAnswer : fromLastProof();
   const report = await agentReport(site);
   const project = payload?.projectKey && String(payload.projectKey).toUpperCase();
   const projectId = project && site.projects.find((p) => p.key === project)?.id;
@@ -711,7 +725,8 @@ async function checkWorkflowsInner(payload) {
 }
 
 async function getWorkflowFindingsInner(payload) {
-  const site = await loadSite();
+  const site = await inTime(loadSite());
+  if (site === TOO_SLOW) return slowAnswer;
   const w = findWorkflow(site, payload?.workflow);
   if (!w) return { error: `No single workflow matches "${payload?.workflow}". Give its full name${candidates(site, payload?.workflow)}.` };
   const r = (await agentReport({ ...site, workflows: [w] })).results[0];
@@ -720,7 +735,8 @@ async function getWorkflowFindingsInner(payload) {
 
 // "Can work reach <target> without passing <through>?" answered for every route, not a sample.
 async function proveRouteInner(payload) {
-  const site = await loadSite();
+  const site = await inTime(loadSite());
+  if (site === TOO_SLOW) return slowAnswer;
   const w = findWorkflow(site, payload?.workflow);
   if (!w) return { error: `No single workflow matches "${payload?.workflow}"${candidates(site, payload?.workflow)}. Give its full name.` };
   const statuses = new Map(Object.entries(site.statuses));

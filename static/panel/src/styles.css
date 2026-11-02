@@ -337,3 +337,6 @@ button, select { font: inherit; color: inherit; }
 
 /* read by screen readers, not shown */
 .il-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* a narrow frame gives the diagram height, so a long workflow is drawn top to bottom at a readable size */
+@media (max-width: 860px) { .il-diagram-wrap.fit { min-height: 62vh; } }
