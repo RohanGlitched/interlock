@@ -9,7 +9,7 @@ export const PROPERTIES = {
   openResolved: { title: 'Reopened but still resolved', why: 'A route leaves a done status without clearing the resolution, so open work counts as resolved and keeps its old resolved date.' },
   unreachable: { title: 'Status nobody can reach', why: 'No route from creation leads to this status.' },
   nobody: { title: 'Transition nobody can use', why: 'Its conditions allow no user, role, group or permission, so the button never appears.' },
-  mustPass: { title: 'Route skips a required status', why: 'Work can reach the target without passing the status your rule requires (for a done target, also after finished work is reopened and finished again).' },
+  mustPass: { title: 'Route skips a required status', why: 'Work can reach the target without passing the status your rule requires, checked every time work arrives (after finished work is reopened, or work that left the target comes back).' },
   ruleStale: { title: 'Rule names a status this workflow no longer has', why: 'The rule was saved for a status that has since been removed from the workflow, so it proves nothing. Remove it or save it again.' },
   approvalSkipped: { title: 'Done without approval', why: 'This workflow asks for an approval, but a route reaches a successful done status without passing any approval step, so work can be completed without anyone approving it.' },
 };
@@ -85,6 +85,7 @@ export function usableBySomeone(t) {
 }
 
 const key = (s, r) => `${s}|${r ? 1 : 0}`;
+const REWORK = /rework|re-?open|reject|fail|send back|sent back|back to|return|redo|bounce/i;
 const NEGATIVE = /cancel|declin|reject|withdr|won.?t|duplicate|abandon|obsolete|invalid|refused|denied|fail|disapprov|unapprov|not.?approv/i;
 
 // Breadth-first over (status, resolution set). In team-managed projects Jira keeps resolution in step
@@ -121,6 +122,13 @@ function exploreRule(model, target, via) {
   const cat = new Map(model.statuses.map((s) => [s.id, s.category]));
   const usable = model.transitions.filter(usableBySomeone);
   const k3 = (s, r, p) => `${s}|${r ? 1 : 0}|${p ? 1 : 0}`;
+  const names = new Map(model.statuses.map((s) => [s.id, s.name]));
+  // the statuses from which work can still reach the required status without going through the target
+  const upstream = new Set([via]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const t of usable) if (upstream.has(t.to)) for (const f of t.from) if (f !== target && !upstream.has(f)) { upstream.add(f); grew = true; }
+  }
   const start = { s: model.initial, r: false, p: model.initial === via };
   const seen = new Map([[k3(start.s, start.r, start.p), { ...start, prev: null, via: null }]]);
   const queue = [start];
@@ -135,9 +143,14 @@ function exploreRule(model, target, via) {
       else if (t.resolution === 'set') r = true;
       else if (t.resolution === 'clear') r = false;
       // passing the required status counts from then on, through loops and moves between done statuses; for a
-      // done target, finished work that is reopened (done to open) has to pass it again before it finishes again
+      // done target, finished work that is reopened (done to open) has to pass it again before it finishes again;
+      // for an open target (Deploy), work sent back upstream of the required status (Deploy to Rework, from where
+      // Review can be reached again) has to pass it again; a side trip that cannot (QA to Blocked and back) is a pause
       const reopened = cat.get(target) === 'DONE' && cat.get(cur.s) === 'DONE' && cat.get(t.to) !== 'DONE';
-      const p = t.to === via ? true : reopened ? false : cur.p;
+      // (a step or status named as rework, "Rework", "Send back", "Failed", counts as going back even when it returns direct)
+      const leftTarget = cat.get(target) !== 'DONE' && cur.s === target && t.to !== target
+        && (upstream.has(t.to) || REWORK.test(t.name || '') || REWORK.test(names.get(t.to) || ''));
+      const p = t.to === via ? true : reopened || leftTarget ? false : cur.p;
       const k = k3(t.to, r, p);
       if (seen.has(k)) continue;
       seen.set(k, { s: t.to, r, p, prev: k3(cur.s, cur.r, cur.p), via: t });
@@ -367,7 +380,7 @@ export function ruleRepairs(model, rule, max = 3, others = []) {
         tries.push({ keeps: true, text: t.from.length > 1
           ? `take ${name.get(f)} off "${t.name}" and add a step from ${name.get(f)} to ${name.get(rule.via)}`
           : `send "${t.name}" from ${name.get(f)} to ${name.get(rule.via)} instead of ${name.get(t.to)}`,
-          change: (x) => (x !== t ? x : x.from.length > 1 ? [{ ...x, from: x.from.filter((y) => y !== f) }, { ...x, from: [f], to: rule.via }] : { ...x, to: rule.via }) });
+          change: (x) => (x !== t ? x : x.from.length > 1 ? [{ ...x, from: x.from.filter((y) => y !== f) }, { ...x, id: `${x.id}+`, from: [f], to: rule.via, resolution: null, screenId: null }] : { ...x, to: rule.via }) });
       }
       tries.push({ text: `remove "${t.name}" from ${name.get(f)} to ${name.get(t.to)}`, change: (x) => (x !== t ? x : (x.from.length > 1 ? { ...x, from: x.from.filter((y) => y !== f) } : null)) });
     }

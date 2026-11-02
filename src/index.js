@@ -235,11 +235,11 @@ export async function recordProof(report, by) {
   // a proof that could not read every screen is not compared: it would report changes that are only
   // differences in what Interlock could see
   if (prev && !report.unreadableScreens) {
-    for (const [id, cur] of Object.entries(snap)) {
+    for (const [id, cur] of Object.entries(snap).filter(([id]) => id !== '__at')) {
       const before = new Set((prev[id]?.findings || []).map((f) => f.key));
       for (const f of cur.findings) if (!before.has(f.key) && comparable(f, prev[id], cur)) changes.push({ kind: 'new', workflow: cur.name, title: f.title, subject: f.subject });
     }
-    for (const [id, old] of Object.entries(prev)) {
+    for (const [id, old] of Object.entries(prev).filter(([id]) => id !== '__at')) {
       const now = new Set((snap[id]?.findings || []).map((f) => f.key));
       for (const f of old.findings) if (!now.has(f.key) && comparable(f, old, snap[id])) changes.push({ kind: 'fixed', workflow: old.name, title: f.title, subject: f.subject });
     }
@@ -248,7 +248,7 @@ export async function recordProof(report, by) {
   // site so large its findings exceed one storage value (240 KiB), the snapshot is dropped and the next
   // proof starts afresh rather than failing every day
   if (!report.unreadableScreens) {
-    if (Buffer.byteLength(JSON.stringify(snap)) < 230000) await kvs.set('watch:snapshot', snap);
+    if (Buffer.byteLength(JSON.stringify(snap)) < 230000) await kvs.set('watch:snapshot', { ...snap, __at: at });
     else await kvs.delete('watch:snapshot');
   }
   // KVS values are capped at 240 KiB; history keeps the newest entries that fit in about 150 KB
@@ -275,7 +275,7 @@ export async function watch() {
 // opened a bad route reaches a person the next morning. The outcome (the work item, or why not) is shown on the page.
 // Findings in the last proof, keyed by workflow; what was reported is kept, so a finding first seen by an admin's own
 // check during the day is still reported the next morning, and each finding is reported once while it lasts.
-const snapshotKeys = (snap) => Object.entries(snap || {}).flatMap(([id, w]) => w.findings.map((f) => ({ k: `${id}|${f.key}`, workflow: w.name, title: f.title, subject: f.subject })));
+const snapshotKeys = (snap) => Object.entries(snap || {}).filter(([id]) => id !== '__at').flatMap(([id, w]) => w.findings.map((f) => ({ k: `${id}|${f.key}`, workflow: w.name, title: f.title, subject: f.subject })));
 async function reportNew() {
   const notify = await kvs.get('watch:notify').catch(() => null);
   if (!notify?.projectKey) return;
@@ -794,8 +794,13 @@ async function fromLastProof() {
   try { await requireAdmin(); } catch (e) { return { error: 'Interlock reads workflow configuration, which only Jira administrators can see. Ask a Jira admin to run this check.' }; }
   const [last, snap] = await Promise.all([kvs.get('watch:last').catch(() => null), kvs.get('watch:snapshot').catch(() => null)]);
   if (!last || !snap) return { error: 'This site took too long to read in one answer, and no saved proof exists yet. Open Interlock (Jira settings, Apps) once to prove it, then ask again.' };
-  const rows = Object.values(snap).map((w) => ({ workflow: w.name, findings: w.findings.filter((f) => !f.rule).map((f) => ({ problem: f.title, status: f.subject })) })).filter((w) => w.findings.length);
-  return { fromLastProof: last.at, note: `This site took too long to read in one answer, so this is the last proof, run at ${last.at}. Open Interlock for a fresh one.`, checked: last.workflows, totalWithFindings: rows.length, workflowsWithFindings: rows.slice(0, 50) };
+  // as the live answer: broken rules included, findings an admin recorded as intended set apart
+  const intended = (await kvs.get('intended').catch(() => null)) || {};
+  const rows = Object.entries(snap).filter(([id]) => id !== '__at').map(([id, w]) => {
+    const own = w.findings.filter((f) => !intended[`${id}|${f.key}`]);
+    return { workflow: w.name, findings: own.map((f) => ({ problem: f.title, status: f.subject })), recordedAsIntended: (w.findings.length - own.length) || undefined };
+  }).filter((w) => w.findings.length);
+  return { fromLastProof: snap.__at || last.at, note: `This site took too long to read in one answer, so this is the last proof, run at ${last.at}. Open Interlock for a fresh one.`, checked: last.workflows, totalWithFindings: rows.length, workflowsWithFindings: rows.slice(0, 50) };
 }
 const slowAnswer = { error: 'This site took too long to read in one answer. Ask again in a minute: the transition screens are cached by then, so the second read is faster.' };
 
@@ -841,7 +846,8 @@ async function proveRouteInner(payload) {
   if (!target || !via) return { error: `Use status names from this workflow: ${w.statuses.map((s) => statuses.get(s.statusReference)?.name).join(', ')}.` };
   if (target === via) return { error: 'The status to reach and the status to pass through are the same; name two different statuses.' };
   const r = checkSite({ ...site, workflows: [w] }, { [w.id]: [{ target, via }] }).results[0];
-  const model = buildModel(w, statuses, { screenHasResolution: new Set(site.screenHasResolution), unreadableScreens: new Set(site.unreadableScreenIds || []) });
+  const teamManaged = w.scope?.type === 'PROJECT' && (site.teamManagedProjects || []).includes(w.scope.project?.id);
+  const model = buildModel(w, statuses, { screenHasResolution: new Set(site.screenHasResolution), unreadableScreens: new Set(site.unreadableScreenIds || []), teamManaged });
   const v = ruleVerdict(model, { target, via });
   if (v.verdict === 'undecided') return { ruleHolds: null, answer: `Interlock cannot say for ${w.name}: ${v.reason}.` };
   const f = r.findings.find((x) => x.property === 'mustPass');
@@ -849,7 +855,7 @@ async function proveRouteInner(payload) {
   // finding plainly so it reads right whichever way the user phrased the question.
   return f
     ? { ruleHolds: false, canSkip: true, answer: `Work CAN reach ${payload.target} without passing ${payload.through}. The rule "${payload.target} only through ${payload.through}" is broken by this route.`, counterexample: brief(f).route, smallestFix: ruleRepairs(model, { target, via }, 1, ((await kvs.get('rules').catch(() => null)) || {})[w.id]?.filter((x) => x.target !== target || x.via !== via) || []).map((x) => `${x.change} (proved: the rule then holds on every route${x.lost.length ? `; ${x.lost.join(', ')} would no longer be reachable` : ''}${x.stranded.length ? `; work in ${x.stranded.join(', ')} would have no way to finish` : ''}${x.adds.length ? `; it would bring ${x.adds.join('; ')}` : ''})`)[0] }
-    : { ruleHolds: true, canSkip: false, answer: `Work can NOT reach ${payload.target} without passing ${payload.through}: every route to ${payload.target} goes through ${payload.through} (for a done status, again after finished work is reopened). Interlock searched every route from creation.` };
+    : { ruleHolds: true, canSkip: false, answer: `Work can NOT reach ${payload.target} without passing ${payload.through}: every route to ${payload.target} goes through ${payload.through}, and again each time reworked or reopened work comes back. Interlock searched every route from creation.` };
 }
 
 // Rovo and MCP callers who are not Jira admins cannot read workflow configuration; tell them so plainly.

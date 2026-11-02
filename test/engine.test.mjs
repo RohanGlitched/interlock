@@ -312,3 +312,24 @@ test('a repair that would carry a resolution into an open status says so and ran
   assert.ok(send.adds.length >= 1);
   assert.equal(fixes[0].change, 'remove "Shortcut" from In Progress to Done');
 });
+
+test('rules: work that leaves an open target and comes back must pass the required status again', () => {
+  // To Do -> In Progress -> Code Review -> Stuck (as "Deploy"), Deploy -> In Progress (rework) -> Deploy skipping review
+  const st = new Map([...statuses, ['5', { name: 'Deploy', category: 'IN_PROGRESS' }]]);
+  const w = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Ship', ['3'], '5'), tr('4', 'Rework', ['5'], '2'),
+    tr('6', 'Redeploy', ['2'], '5'), tr('7', 'Finish', ['5'], '4', { actions: setRes })], ['1', '2', '3', '4', '5']);
+  // a first deploy can go straight from In Progress too, so make the first route honest: only rework allows Redeploy
+  assert.equal(ruleVerdict(buildModel(w, st), { target: '5', via: '3' }).verdict, 'broken');
+  const strict = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Ship', ['3'], '5'), tr('7', 'Finish', ['5'], '4', { actions: setRes })], ['1', '2', '3', '4', '5']);
+  assert.equal(ruleVerdict(buildModel(strict, st), { target: '5', via: '3' }).verdict, 'holds');
+});
+
+test('rules: rework that returns straight to an open target must pass the required status again; a pause need not', () => {
+  const st = new Map([['1', { name: 'To Do', category: 'TODO' }], ['2', { name: 'Dev', category: 'IN_PROGRESS' }], ['3', { name: 'QA', category: 'IN_PROGRESS' }],
+    ['5', { name: 'Deploy', category: 'IN_PROGRESS' }], ['6', { name: 'Rework', category: 'IN_PROGRESS' }], ['7', { name: 'On hold', category: 'IN_PROGRESS' }], ['4', { name: 'Done', category: 'DONE' }]]);
+  const base = [tr('1', 'Start', ['1'], '2'), tr('2', 'Test', ['2'], '3'), tr('3', 'Ship', ['3'], '5'), tr('9', 'Finish', ['5'], '4', { actions: setRes })];
+  const rework = wf([...base, tr('4', 'Send to rework', ['5'], '6'), tr('5', 'Redeploy', ['6'], '5')], ['1', '2', '3', '5', '6', '4']);
+  assert.equal(ruleVerdict(buildModel(rework, st), { target: '5', via: '3' }).verdict, 'broken');
+  const pause = wf([...base, tr('4', 'Hold', ['5'], '7'), tr('5', 'Resume', ['7'], '5')], ['1', '2', '3', '5', '7', '4']);
+  assert.equal(ruleVerdict(buildModel(pause, st), { target: '5', via: '3' }).verdict, 'holds');
+});
