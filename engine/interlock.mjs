@@ -349,7 +349,7 @@ export function ruleRepairs(model, rule, max = 3, others = []) {
   const stuck = (m) => new Set(check(m).filter((f) => f.property === 'stranded').map((f) => f.status ?? f.subject));
   // every other problem the change would bring (a step sent elsewhere can carry a resolution into an open status)
   const problems = (m) => new Map(check(m, { mustPass: others }).filter((f) => f.property !== 'stranded' && f.property !== 'unreachable')
-    .map((f) => [`${f.property}|${f.subject}`, f.property === 'mustPass' ? `a broken rule (${f.subject})` : `${f.title.toLowerCase()} (${f.subject})`]));
+    .map((f) => [`${f.property}|${f.subject}`, f.property === 'mustPass' ? `a broken rule (${f.subject})` : f.property === 'openResolved' ? `work resolved while still open (${f.subject})` : `${f.title.toLowerCase()} (${f.subject})`]));
   const before = reached(model), stuckBefore = stuck(model), problemsBefore = problems(model);
   // any single change that makes the rule hold must cut the route that breaks it, so only that route's steps are tried
   const onRoute = new Set((v.route?.hops || []).map((h) => `${h.transitionId}|${h.from}`));
@@ -363,7 +363,10 @@ export function ruleRepairs(model, rule, max = 3, others = []) {
       if (!onRoute.has(`${t.id}|${f}`)) continue;
       // first the change that keeps the step: send it to the required status instead, so work still gets there, through it
       if (t.to === rule.target && f !== rule.via) {
-        tries.push({ keeps: true, text: `send "${t.name}" from ${name.get(f)} to ${name.get(rule.via)} instead of ${name.get(t.to)}`,
+        // (a step that also runs from other statuses keeps them: the change is a new step from this status alone)
+        tries.push({ keeps: true, text: t.from.length > 1
+          ? `take ${name.get(f)} off "${t.name}" and add a step from ${name.get(f)} to ${name.get(rule.via)}`
+          : `send "${t.name}" from ${name.get(f)} to ${name.get(rule.via)} instead of ${name.get(t.to)}`,
           change: (x) => (x !== t ? x : x.from.length > 1 ? [{ ...x, from: x.from.filter((y) => y !== f) }, { ...x, from: [f], to: rule.via }] : { ...x, to: rule.via }) });
       }
       tries.push({ text: `remove "${t.name}" from ${name.get(f)} to ${name.get(t.to)}`, change: (x) => (x !== t ? x : (x.from.length > 1 ? { ...x, from: x.from.filter((y) => y !== f) } : null)) });

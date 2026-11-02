@@ -113,7 +113,7 @@ engine/trace.mjs        "How did they get there?": reads the history of work ite
 src/index.js            site loading, live counts, replay, fix, demo project, daily watch, Rovo actions
 static/panel/src/       the signal-box page (React): track diagram (layout.js), interlocking table
 skills/interlock/       agent skill for the MCP server
-test/                   engine tests and the layout test (npm test)
+test/                   engine, layout and watch-report tests; test/forge/ stands in for Jira and app storage (npm test)
 tools/public-trace.mjs  the public-Jira study (docs/public-jira.md)
 docs/                   public-Jira evidence, template report, cover
 ```

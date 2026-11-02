@@ -87,7 +87,10 @@ export async function loadSite({ asApp = false, fresh = false, budgetMs = 0 } = 
     // (a hundred projects per call: a site with a thousand projects needs ten calls, not a thousand)
     pool(Array.from({ length: Math.ceil(classic.length / 100) }, (_, k) => classic.slice(k * 100, k * 100 + 100)), 5, async (batch) => {
       const ids = batch.map((p) => String(p.id)).filter((id) => /^\d+$/.test(id));
-      const r = await call(assumeTrustedRoute(`/rest/api/3/workflowscheme/project?${ids.map((id) => `projectId=${id}`).join('&')}`)).catch(() => null);
+      // (a batch Jira refuses is read one project at a time, so one bad project never hides a hundred)
+      const r = await call(assumeTrustedRoute(`/rest/api/3/workflowscheme/project?${ids.map((id) => `projectId=${id}`).join('&')}`))
+        .catch(async () => ({ values: (await Promise.all(ids.map((id) => call(route`/rest/api/3/workflowscheme/project?projectId=${id}`).catch(() => null))))
+          .flatMap((x) => x?.values || []) }));
       for (const v of r?.values || []) {
         const scheme = v.workflowScheme;
         if (!scheme) continue;
@@ -787,7 +790,8 @@ const AGENT_BUDGET_MS = 18000;
 const TOO_SLOW = Symbol('too slow');
 const inTime = (p) => Promise.race([p.then((x) => (x?.partial ? TOO_SLOW : x)), new Promise((r) => setTimeout(() => r(TOO_SLOW), AGENT_BUDGET_MS))]);
 async function fromLastProof() {
-  await requireAdmin();
+  // the last proof is site configuration: Jira administrators only, as for a live read
+  try { await requireAdmin(); } catch (e) { return { error: 'Interlock reads workflow configuration, which only Jira administrators can see. Ask a Jira admin to run this check.' }; }
   const [last, snap] = await Promise.all([kvs.get('watch:last').catch(() => null), kvs.get('watch:snapshot').catch(() => null)]);
   if (!last || !snap) return { error: 'This site took too long to read in one answer, and no saved proof exists yet. Open Interlock (Jira settings, Apps) once to prove it, then ask again.' };
   const rows = Object.values(snap).map((w) => ({ workflow: w.name, findings: w.findings.filter((f) => !f.rule).map((f) => ({ problem: f.title, status: f.subject })) })).filter((w) => w.findings.length);
