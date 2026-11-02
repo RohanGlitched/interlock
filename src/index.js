@@ -674,7 +674,11 @@ resolver.define('fix', async (req) => {
     if (!record) throw new Error('Interlock has no record of this fix, so it cannot take it back.');
     for (const t of wf.transitions) {
       if (!(t.id in record.before)) continue;
-      if (record.after && sameActions(t.actions, record.after[t.id]) === false) throw new Error(`"${t.name}" has been edited since Interlock fixed it, so Undo would overwrite that edit. Change it back in the workflow editor instead.`);
+      // the transition must still read as Interlock left it: as Jira read it back, as Interlock sent it, or exactly as it
+      // was before plus the one resolution step Interlock added (Jira can read back the old version for a moment)
+      const ours = (list) => { const l = list || []; const last = l[l.length - 1]; return last?.ruleKey === 'system:update-field' && last.parameters?.field === 'resolution' && sameActions(l.slice(0, -1), record.before[t.id]); };
+      const asLeft = !record.after || sameActions(t.actions, record.after[t.id]) || (record.sent && sameActions(t.actions, record.sent[t.id])) || ours(t.actions);
+      if (!asLeft) throw new Error(`"${t.name}" has been edited since Interlock fixed it, so Undo would overwrite that edit. Change it back in the workflow editor instead.`);
       t.actions = record.before[t.id];
       changed.push(t.name);
     }
@@ -738,7 +742,8 @@ resolver.define('fix', async (req) => {
     const back = await jira(route`/rest/api/3/workflows`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workflowIds: [workflowId] }) }).catch(() => null);
     const saved = back?.workflows?.[0]?.transitions || wf.transitions;
     const after = Object.fromEntries(saved.filter((t) => t.id in before).map((t) => [t.id, t.actions || []]));
-    fixes[k] = { workflowId, property, status, statusName: st.find((s) => s.id === status)?.name, before, after, transitions: changed, at: new Date().toISOString(), name: wf.name };
+    const sent = Object.fromEntries(wf.transitions.filter((t) => t.id in before).map((t) => [t.id, t.actions || []]));
+    fixes[k] = { workflowId, property, status, statusName: st.find((s) => s.id === status)?.name, before, after, sent, transitions: changed, at: new Date().toISOString(), name: wf.name };
   }
   await kvs.set('fixes', fixes);
   return { changed, resolutionName, valid: true, applied: true, before };

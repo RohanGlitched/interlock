@@ -111,3 +111,21 @@ test('a fix Jira refuses leaves no Undo record; Undo refuses to overwrite a late
   F.wf.transitions.find((t) => t.id === '2').actions.push({ ruleKey: 'system:assign', parameters: {} }); // someone edits it since
   await assert.rejects(fix('undo'), /edited since/);
 });
+
+test('Undo works when Jira read the workflow back before the change showed', async () => {
+  fresh(); Object.assign(F, { wf: fixWf(), updates: 0, failUpdate: false });
+  const stale = structuredClone(F.wf);
+  let reads = 0;
+  const real = globalThis.JIRA;
+  globalThis.JIRA = async (path, init) => {
+    // the read-back right after the update returns the old workflow once
+    if (path === '/rest/api/3/workflows' && init?.method === 'POST' && F.updates === 1 && reads++ === 0) return { workflows: [structuredClone(stale)] };
+    return real(path, init);
+  };
+  try {
+    await fix('apply');
+    assert.equal(setsResolution(), true);
+    await fix('undo');
+    assert.equal(setsResolution(), false);
+  } finally { globalThis.JIRA = real; }
+});
