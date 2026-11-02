@@ -333,3 +333,16 @@ test('rules: rework that returns straight to an open target must pass the requir
   const pause = wf([...base, tr('4', 'Hold', ['5'], '7'), tr('5', 'Resume', ['7'], '5')], ['1', '2', '3', '5', '7', '4']);
   assert.equal(ruleVerdict(buildModel(pause, st), { target: '5', via: '3' }).verdict, 'holds');
 });
+
+test('rules: a pause with a step straight back into the target is not rework, even if it could also restart', () => {
+  const st = new Map([['1', { name: 'To Do', category: 'TODO' }], ['2', { name: 'In Progress', category: 'IN_PROGRESS' }], ['3', { name: 'Review', category: 'IN_PROGRESS' }],
+    ['5', { name: 'Deploy', category: 'IN_PROGRESS' }], ['6', { name: 'Blocked', category: 'IN_PROGRESS' }], ['4', { name: 'Done', category: 'DONE' }]]);
+  const w = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '5'), tr('4', 'Block', ['5'], '6'), tr('5', 'Unblock', ['6'], '5'),
+    tr('6', 'Restart', ['6'], '2'), tr('9', 'Finish', ['5'], '4', { actions: setRes })], ['1', '2', '3', '5', '6', '4']);
+  assert.equal(ruleVerdict(buildModel(w, st), { target: '5', via: '3' }).verdict, 'holds');
+  // a step named "Return to queue" is not rework; "Failed checks" is
+  const q = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '5'), tr('4', 'Return to queue', ['5'], '6'), tr('5', 'Resume', ['6'], '5'), tr('9', 'Finish', ['5'], '4', { actions: setRes })], ['1', '2', '3', '5', '6', '4']);
+  assert.equal(ruleVerdict(buildModel(q, st), { target: '5', via: '3' }).verdict, 'holds');
+  const f = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '5'), tr('4', 'Failed checks', ['5'], '6'), tr('5', 'Redeploy', ['6'], '5'), tr('9', 'Finish', ['5'], '4', { actions: setRes })], ['1', '2', '3', '5', '6', '4']);
+  assert.equal(ruleVerdict(buildModel(f, st), { target: '5', via: '3' }).verdict, 'broken');
+});

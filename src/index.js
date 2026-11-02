@@ -800,7 +800,7 @@ async function fromLastProof() {
     const own = w.findings.filter((f) => !intended[`${id}|${f.key}`]);
     return { workflow: w.name, findings: own.map((f) => ({ problem: f.title, status: f.subject })), recordedAsIntended: (w.findings.length - own.length) || undefined };
   }).filter((w) => w.findings.length);
-  return { fromLastProof: snap.__at || last.at, note: `This site took too long to read in one answer, so this is the last proof, run at ${last.at}. Open Interlock for a fresh one.`, checked: last.workflows, totalWithFindings: rows.length, workflowsWithFindings: rows.slice(0, 50) };
+  return { fromLastProof: snap.__at || last.at, note: `This site took too long to read in one answer, so this is the last saved proof, run at ${snap.__at || last.at}${snap.__at && snap.__at !== last.at ? ` (a later proof at ${last.at} could not be saved for comparison)` : ''}. Open Interlock for a fresh one.`, checked: snap.__at && snap.__at !== last.at ? undefined : last.workflows, totalWithFindings: rows.length, workflowsWithFindings: rows.slice(0, 50) };
 }
 const slowAnswer = { error: 'This site took too long to read in one answer. Ask again in a minute: the transition screens are cached by then, so the second read is faster.' };
 

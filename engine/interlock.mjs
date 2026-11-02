@@ -85,7 +85,7 @@ export function usableBySomeone(t) {
 }
 
 const key = (s, r) => `${s}|${r ? 1 : 0}`;
-const REWORK = /rework|re-?open|reject|fail|send back|sent back|back to|return|redo|bounce/i;
+const REWORK = /\b(rework|re-?open(ed)?|reject(ed)?|failed|send back|sent back|back to|redo|bounced?)\b/i;
 const NEGATIVE = /cancel|declin|reject|withdr|won.?t|duplicate|abandon|obsolete|invalid|refused|denied|fail|disapprov|unapprov|not.?approv/i;
 
 // Breadth-first over (status, resolution set). In team-managed projects Jira keeps resolution in step
@@ -148,8 +148,10 @@ function exploreRule(model, target, via) {
       // Review can be reached again) has to pass it again; a side trip that cannot (QA to Blocked and back) is a pause
       const reopened = cat.get(target) === 'DONE' && cat.get(cur.s) === 'DONE' && cat.get(t.to) !== 'DONE';
       // (a step or status named as rework, "Rework", "Send back", "Failed", counts as going back even when it returns direct)
+      // (a status with a step straight back into the target, Blocked -> Deploy, is a pause even if it could also restart)
+      const backDirect = usable.some((x) => x.to === target && x.from.includes(t.to));
       const leftTarget = cat.get(target) !== 'DONE' && cur.s === target && t.to !== target
-        && (upstream.has(t.to) || REWORK.test(t.name || '') || REWORK.test(names.get(t.to) || ''));
+        && ((upstream.has(t.to) && !backDirect) || REWORK.test(t.name || '') || REWORK.test(names.get(t.to) || ''));
       const p = t.to === via ? true : reopened || leftTarget ? false : cur.p;
       const k = k3(t.to, r, p);
       if (seen.has(k)) continue;
