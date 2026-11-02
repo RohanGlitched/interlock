@@ -248,15 +248,21 @@ export async function watch() {
   const { changes } = await recordProof(report, 'daily watch');
   console.log(`Interlock watch: ${report.results.length} workflows, ${changes.length} changes since the last proof`);
   // a report that could not be made is shown on the page with Jira's reason, never only in the logs
-  await reportNew(changes).catch((e) => kvs.set('watch:notified', { at: new Date().toISOString(), error: String(e.message).slice(0, 200) }).catch(() => {}));
+  await reportNew().catch((e) => kvs.set('watch:notified', { at: new Date().toISOString(), error: String(e.message).slice(0, 200) }).catch(() => {}));
 }
 
 // New findings the watch saw are reported as one work item in the project an admin chose, so a workflow edit that
 // opened a bad route reaches a person the next morning. The outcome (the work item, or why not) is shown on the page.
-async function reportNew(changes) {
-  const fresh = changes.filter((c) => c.kind === 'new');
+// Findings in the last proof, keyed by workflow; what was reported is kept, so a finding first seen by an admin's own
+// check during the day is still reported the next morning, and each finding is reported once while it lasts.
+const snapshotKeys = (snap) => Object.entries(snap || {}).flatMap(([id, w]) => w.findings.map((f) => ({ k: `${id}|${f.key}`, workflow: w.name, title: f.title, subject: f.subject })));
+async function reportNew() {
   const notify = await kvs.get('watch:notify').catch(() => null);
-  if (!fresh.length || !notify?.projectKey) return;
+  if (!notify?.projectKey) return;
+  const now = snapshotKeys(await kvs.get('watch:snapshot'));
+  const reported = new Set((await kvs.get('watch:reported').catch(() => null)) || []);
+  const fresh = now.filter((f) => !reported.has(f.k));
+  if (!fresh.length) { await kvs.set('watch:reported', now.map((f) => f.k)); return; }
   const types = await jiraApp(route`/rest/api/3/issue/createmeta/${notify.projectKey}/issuetypes`);
   const list = (types.issueTypes || types.values || []).filter((t) => !t.subtask);
   const type = list.find((t) => /^task$/i.test(t.name)) || list[0];
@@ -275,6 +281,8 @@ async function reportNew(changes) {
     } }),
   });
   await kvs.set('watch:notified', { at: new Date().toISOString(), key: created.key, count: fresh.length });
+  // a finding that clears drops out, so one that comes back is reported again
+  await kvs.set('watch:reported', now.map((f) => f.k));
 }
 
 resolver.define('setWatchNotify', async (req) => {
@@ -285,6 +293,8 @@ resolver.define('setWatchNotify', async (req) => {
   await jira(route`/rest/api/3/project/${key}`);
   const me = await jira(route`/rest/api/3/myself`);
   const notify = { projectKey: key, by: me.displayName, at: new Date().toISOString() };
+  // what the last proof already shows is known to whoever turns this on: reports start with what is new from here
+  await kvs.set('watch:reported', snapshotKeys(await kvs.get('watch:snapshot')).map((f) => f.k));
   await kvs.set('watch:notify', notify);
   return { notify };
 });

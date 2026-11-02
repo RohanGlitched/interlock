@@ -794,6 +794,9 @@ function Rules({ model, rules, setRules, findings = [], onShow }) {
   const [justAdded, setJustAdded] = useState(null);
   useEffect(() => { if (!justAdded) return; const f = brokenBy(justAdded); if (f) onShow?.(f); setJustAdded(null); }, [findings, justAdded]); // eslint-disable-line react-hooks/exhaustive-deps
   const done = model.statuses.filter((s) => s.category === 'DONE');
+  // the smallest repair of each broken rule, worked out once per workflow and rule (it proves every candidate)
+  const repairs = useMemo(() => new Map(), [model]);
+  const repairOf = (r) => { const k = `${r.target}>${r.via}`; if (!repairs.has(k)) repairs.set(k, ruleRepairs(model, r, 1)[0] || null); return repairs.get(k); };
   return (
     <section className="il-rules">
       <h3>Rules for this workflow</h3>
@@ -808,14 +811,14 @@ function Rules({ model, rules, setRules, findings = [], onShow }) {
       })()}
       {rules.map((r, i) => {
         const f = brokenBy(r), v = ruleVerdict(model, r);
-        const broken = !!f || v.verdict === 'broken', repair = broken && ruleRepairs(model, r, 1)[0];
+        const broken = !!f || v.verdict === 'broken', repair = broken && repairOf(r);
         return (
           <div key={i}><p className="il-rule"><Lamp state={f || v.verdict === 'broken' ? 'red' : v.verdict === 'undecided' ? 'amber' : 'green'} /> Work reaches <b>{name(model, r.target)}</b> only through <b>{name(model, r.via)}</b>:{' '}
             {f ? <><b className="il-live">broken</b> <button className="il-link" onClick={() => onShow?.(f)}>Show the route</button></>
               : v.verdict === 'undecided' ? <b>cannot say: {v.reason}</b> : <b>holds on every route</b>}{' '}
-            <button className="il-link" onClick={() => setRules(rules.filter((_, j) => j !== i))}>Remove</button></p>
+            <span className="il-sep" aria-hidden="true">·</span> <button className="il-link" onClick={() => setRules(rules.filter((_, j) => j !== i))}>Delete rule</button></p>
           {repair && <p className="il-repair">Smallest change that makes it hold: <b>{repair.change}</b>. Interlock proved the rule then holds on every route{repair.lost.length ? `, but ${repair.lost.join(', ')} could no longer be reached` : ', and every status stays reachable'}. Change it in the workflow editor if the team agrees.</p>}
-          {broken && !repair && <p className="il-repair">No single transition change makes it hold: more than one route reaches {name(model, r.target)} without {name(model, r.via)}.</p>}
+          {broken && !repair && <p className="il-repair">No single transition change makes it hold: Interlock took away each transition in turn, and every time either another route still skips {name(model, r.via)} or {name(model, r.target)} could no longer be reached at all.</p>}
           </div>
         );
       })}
@@ -848,6 +851,7 @@ function Watch({ stamp, projects = [] }) {
   const fresh = latest && latest.at === w.last.at;
   const count = (h, kind) => h.changes.filter((c) => c.kind.startsWith(kind)).length;
   return (
+    <>
     <details className="il-watch">
       <summary>
         <Lamp state={fresh && count(latest, 'new') ? 'red' : 'green'} />
@@ -857,17 +861,6 @@ function Watch({ stamp, projects = [] }) {
         </span>
         {w.history?.length > 0 && <span className="il-watch-more">Show history</span>}
       </summary>
-      <div className="il-watch-notify">
-        {w.notify ? <p>New findings are reported as a work item in <b>{w.notify.projectKey}</b> (set by {w.notify.by}).{w.notified?.key ? ` Last report: ${w.notified.key}, ${when(w.notified.at)}.` : w.notified?.error ? ` The last report could not be made (${w.notified.error}); Interlock's app user needs permission to create work items there.` : ''}{' '}
-          <button className="il-link" disabled={busy} onClick={() => { setBusy(true); invoke('setWatchNotify', { projectKey: null }).then((r) => setW({ ...w, notify: r.notify })).finally(() => setBusy(false)); }}>Stop reporting</button></p>
-          : <p><label>Report new findings as a work item in{' '}
-            <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Project for the watch's reports">
-              <option value="">a project…</option>
-              {projects.map((p) => <option key={p.key} value={p.key}>{p.key}: {p.name}</option>)}
-            </select></label>{' '}
-            <button className="il-btn" disabled={!pick || busy} onClick={() => { setBusy(true); setErr(null); invoke('setWatchNotify', { projectKey: pick }).then((r) => setW({ ...w, notify: r.notify })).catch((e) => setErr(e.message || String(e))).finally(() => setBusy(false)); }}>Report there</button>
-            {err && <span className="il-error"> {err}</span>}</p>}
-      </div>
       {w.history?.length > 0 && (
         <ol>
           {w.history.map((h) => (
@@ -886,5 +879,17 @@ function Watch({ stamp, projects = [] }) {
         </ol>
       )}
     </details>
+      <div className="il-watch-notify">
+        {w.notify ? <p>New findings are reported as a work item in <b>{w.notify.projectKey}</b> (set by {w.notify.by}).{w.notified?.key ? ` Last report: ${w.notified.key}, ${when(w.notified.at)}.` : w.notified?.error ? ` The last report could not be made (${w.notified.error}); Interlock's app user needs permission to create work items there.` : ''}{' '}
+          <button className="il-link" disabled={busy} onClick={() => { setBusy(true); invoke('setWatchNotify', { projectKey: null }).then((r) => setW({ ...w, notify: r.notify })).finally(() => setBusy(false)); }}>Stop reporting</button></p>
+          : <p><label>Report new findings as a work item in{' '}
+            <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Project for the watch's reports">
+              <option value="">a project…</option>
+              {projects.map((p) => <option key={p.key} value={p.key}>{p.key}: {p.name}</option>)}
+            </select></label>{' '}
+            <button className="il-btn" disabled={!pick || busy} onClick={() => { setBusy(true); setErr(null); invoke('setWatchNotify', { projectKey: pick }).then((r) => setW({ ...w, notify: r.notify })).catch((e) => setErr(e.message || String(e))).finally(() => setBusy(false)); }}>Report there</button>
+            {err && <span className="il-error"> {err}</span>}</p>}
+      </div>
+    </>
   );
 }

@@ -358,7 +358,7 @@ export function ruleRepairs(model, rule, max = 3) {
   for (const c of tries) {
     const m = { ...model, transitions: model.transitions.map(c.change).filter(Boolean) };
     if (ruleVerdict(m, rule).verdict !== 'holds') continue;
-    const lost = [...before].filter((s) => !reached(m).has(s)).map((s) => name.get(s));
+    const after = reached(m), lost = [...before].filter((s) => !after.has(s)).map((s) => name.get(s));
     out.push({ change: c.text, lost });
   }
   return out.sort((a, b) => a.lost.length - b.lost.length).slice(0, max);
