@@ -280,10 +280,10 @@ test('the trace counts routes and marks the ones ending in a flagged status', ()
 test('a broken rule comes with the smallest change that makes it hold, proved over every route', () => {
   const w = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '4', { actions: setRes }), tr('5', 'Shortcut', ['2'], '4', { actions: setRes })]);
   const fixes = ruleRepairs(buildModel(w, statuses), { target: '4', via: '3' });
-  // the step is kept, sent through the required status, before any removal is offered
-  assert.equal(fixes[0].change, 'send "Shortcut" from In Progress to Code Review instead of Done');
+  // (sending Shortcut through Code Review is also offered, ranked after: it would carry its resolution there)
+  assert.equal(fixes[0].change, 'remove "Shortcut" from In Progress to Done');
   assert.deepEqual(fixes[0].lost, []);
-  assert.ok(fixes.some((f) => f.change === 'remove "Shortcut" from In Progress to Done'));
+  assert.ok(fixes.some((f) => f.change.startsWith('send "Shortcut"')));
   // a "from any status" transition into done: run it only from the required status
   const g = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '4', { actions: setRes }), tr('6', 'Close', null, '4', { actions: setRes })]);
   assert.ok(ruleRepairs(buildModel(g, statuses), { target: '4', via: '3' }).some((f) => f.change.startsWith('let "Close" run only from Code Review')));
@@ -302,4 +302,13 @@ test('a repair that leaves work with no way to finish says so, and ranks after o
   // sending Ship through Code Review strands nothing, so it comes first
   assert.equal(fixes[0].change, 'send "Ship" from Hotfix to Code Review instead of Done');
   assert.deepEqual([fixes[0].lost, fixes[0].stranded], [[], []]);
+});
+
+test('a repair that would carry a resolution into an open status says so and ranks after one that would not', () => {
+  // Shortcut sets the resolution on its way to Done; sent to Code Review instead, it would leave open work resolved
+  const w = wf([tr('1', 'Start', ['1'], '2'), tr('2', 'Review', ['2'], '3'), tr('3', 'Approve', ['3'], '4', { actions: setRes }), tr('5', 'Shortcut', ['2'], '4', { actions: setRes })]);
+  const fixes = ruleRepairs(buildModel(w, statuses), { target: '4', via: '3' }, 5);
+  const send = fixes.find((f) => f.change.startsWith('send "Shortcut"'));
+  assert.ok(send.adds.length >= 1);
+  assert.equal(fixes[0].change, 'remove "Shortcut" from In Progress to Done');
 });

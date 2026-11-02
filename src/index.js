@@ -830,7 +830,7 @@ async function proveRouteInner(payload) {
   // `ruleHolds` is about the rule "every route to target passes through"; the answer sentence states the
   // finding plainly so it reads right whichever way the user phrased the question.
   return f
-    ? { ruleHolds: false, canSkip: true, answer: `Work CAN reach ${payload.target} without passing ${payload.through}. The rule "${payload.target} only through ${payload.through}" is broken by this route.`, counterexample: brief(f).route, smallestFix: ruleRepairs(model, { target, via }, 1).map((x) => `${x.change} (proved: the rule then holds on every route${x.lost.length ? `; ${x.lost.join(', ')} would no longer be reachable` : ''}${x.stranded.length ? `; work in ${x.stranded.join(', ')} would have no way to finish` : ''})`)[0] }
+    ? { ruleHolds: false, canSkip: true, answer: `Work CAN reach ${payload.target} without passing ${payload.through}. The rule "${payload.target} only through ${payload.through}" is broken by this route.`, counterexample: brief(f).route, smallestFix: ruleRepairs(model, { target, via }, 1).map((x) => `${x.change} (proved: the rule then holds on every route${x.lost.length ? `; ${x.lost.join(', ')} would no longer be reachable` : ''}${x.stranded.length ? `; work in ${x.stranded.join(', ')} would have no way to finish` : ''}${x.adds.length ? `; it would bring ${x.adds.join('; ')}` : ''})`)[0] }
     : { ruleHolds: true, canSkip: false, answer: `Work can NOT reach ${payload.target} without passing ${payload.through}: every route to ${payload.target} goes through ${payload.through} (for a done status, again after finished work is reopened). Interlock searched every route from creation.` };
 }
 

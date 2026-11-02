@@ -346,7 +346,9 @@ export function ruleRepairs(model, rule, max = 3) {
   const name = new Map(model.statuses.map((s) => [s.id, s.name]));
   const reached = (m) => new Set([...explore(m).values()].map((n) => n.s));
   const stuck = (m) => new Set(check(m).filter((f) => f.property === 'stranded').map((f) => f.status ?? f.subject));
-  const before = reached(model), stuckBefore = stuck(model);
+  // every other problem the change would bring (a step sent elsewhere can carry a resolution into an open status)
+  const problems = (m) => new Map(check(m).filter((f) => f.property !== 'stranded' && f.property !== 'unreachable').map((f) => [`${f.property}|${f.subject}`, `${f.title.toLowerCase()} (${f.subject})`]));
+  const before = reached(model), stuckBefore = stuck(model), problemsBefore = problems(model);
   // any single change that makes the rule hold must cut the route that breaks it, so only that route's steps are tried
   const onRoute = new Set((v.route?.hops || []).map((h) => `${h.transitionId}|${h.from}`));
   const tries = [];
@@ -372,8 +374,10 @@ export function ruleRepairs(model, rule, max = 3) {
     const after = reached(m), stuckAfter = stuck(m);
     const lost = [...before].filter((s) => !after.has(s)).map((s) => name.get(s));
     const stranded = [...stuckAfter].filter((s) => !stuckBefore.has(s)).map((s) => name.get(s) || s);
-    out.push({ change: c.text, lost, stranded, keepsStep: !!c.keeps });
+    const adds = [...problems(m)].filter(([k]) => !problemsBefore.has(k)).map(([, t]) => t);
+    out.push({ change: c.text, lost, stranded, adds, keepsStep: !!c.keeps });
   }
-  // fewest statuses cut off or stuck first, and among equals a change that keeps the step before one that removes it
-  return out.sort((a, b) => a.lost.length + a.stranded.length - (b.lost.length + b.stranded.length) || (b.keepsStep ? 1 : 0) - (a.keepsStep ? 1 : 0)).slice(0, max);
+  // fewest statuses cut off, stuck or newly wrong first, and among equals a change that keeps the step before a removal
+  const cost = (x) => x.lost.length + x.stranded.length + x.adds.length;
+  return out.sort((a, b) => cost(a) - cost(b) || (b.keepsStep ? 1 : 0) - (a.keepsStep ? 1 : 0)).slice(0, max);
 }

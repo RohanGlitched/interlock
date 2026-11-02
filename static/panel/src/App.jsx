@@ -817,8 +817,8 @@ function Rules({ model, rules, setRules, findings = [], onShow }) {
             {f ? <><b className="il-live">broken</b> <button className="il-link" onClick={() => onShow?.(f)}>Show the route</button></>
               : v.verdict === 'undecided' ? <b>cannot say: {v.reason}</b> : <b>holds on every route</b>}{' '}
             <span className="il-sep" aria-hidden="true">·</span> <button className="il-link" onClick={() => setRules(rules.filter((_, j) => j !== i))}>Delete rule</button></p>
-          {repair && <p className="il-repair">Smallest change that makes it hold: <b>{repair.change}</b>. Interlock proved the rule then holds on every route{repair.lost.length ? `, but ${repair.lost.join(', ')} could no longer be reached` : repair.stranded.length ? `, but work in ${repair.stranded.join(', ')} would have no way to finish` : ', and every status stays reachable and can still finish'}. Change it in the workflow editor if the team agrees.</p>}
-          {broken && !repair && <p className="il-repair">No single transition change makes it hold: Interlock took away each transition in turn, and every time either another route still skips {name(model, r.via)} or {name(model, r.target)} could no longer be reached at all.</p>}
+          {repair && <p className="il-repair">Smallest change that makes it hold: <b>{repair.change}</b>. Interlock proved the rule then holds on every route{repair.lost.length ? `, but ${repair.lost.join(', ')} could no longer be reached` : repair.stranded.length ? `, but work in ${repair.stranded.join(', ')} would have no way to finish` : repair.adds?.length ? `, but it would bring ${repair.adds.join('; ')}` : ', and every status stays reachable and can still finish, with no new problem'}. Change it in the workflow editor if the team agrees.</p>}
+          {broken && !repair && <p className="il-repair">No single change to one step makes it hold: Interlock tried removing or redirecting each step of the route, and every time either another route still skips {name(model, r.via)} or {name(model, r.target)} could no longer be reached at all.</p>}
           </div>
         );
       })}
