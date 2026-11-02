@@ -796,7 +796,7 @@ function Rules({ model, rules, setRules, findings = [], onShow }) {
   const done = model.statuses.filter((s) => s.category === 'DONE');
   // the smallest repair of each broken rule, worked out once per workflow and rule (it proves every candidate)
   const repairs = useMemo(() => new Map(), [model]);
-  const repairOf = (r) => { const k = `${r.target}>${r.via}`; if (!repairs.has(k)) repairs.set(k, ruleRepairs(model, r, 1)[0] || null); return repairs.get(k); };
+  const repairOf = (r, others) => { const k = `${r.target}>${r.via}|${others.map((x) => `${x.target}>${x.via}`).join(',')}`; if (!repairs.has(k)) repairs.set(k, ruleRepairs(model, r, 1, others)[0] || null); return repairs.get(k); };
   return (
     <section className="il-rules">
       <h3>Rules for this workflow</h3>
@@ -811,13 +811,17 @@ function Rules({ model, rules, setRules, findings = [], onShow }) {
       })()}
       {rules.map((r, i) => {
         const f = brokenBy(r), v = ruleVerdict(model, r);
-        const broken = !!f || v.verdict === 'broken', repair = broken && repairOf(r);
+        const broken = !!f || v.verdict === 'broken', repair = broken && repairOf(r, rules.filter((x) => x !== r));
         return (
           <div key={i}><p className="il-rule"><Lamp state={f || v.verdict === 'broken' ? 'red' : v.verdict === 'undecided' ? 'amber' : 'green'} /> Work reaches <b>{name(model, r.target)}</b> only through <b>{name(model, r.via)}</b>:{' '}
             {f ? <><b className="il-live">broken</b> <button className="il-link" onClick={() => onShow?.(f)}>Show the route</button></>
               : v.verdict === 'undecided' ? <b>cannot say: {v.reason}</b> : <b>holds on every route</b>}{' '}
             <span className="il-sep" aria-hidden="true">·</span> <button className="il-link" onClick={() => setRules(rules.filter((_, j) => j !== i))}>Delete rule</button></p>
-          {repair && <p className="il-repair">Smallest change that makes it hold: <b>{repair.change}</b>. Interlock proved the rule then holds on every route{repair.lost.length ? `, but ${repair.lost.join(', ')} could no longer be reached` : repair.stranded.length ? `, but work in ${repair.stranded.join(', ')} would have no way to finish` : repair.adds?.length ? `, but it would bring ${repair.adds.join('; ')}` : ', and every status stays reachable and can still finish, with no new problem'}. Change it in the workflow editor if the team agrees.</p>}
+          {repair && <p className="il-repair">Smallest change that makes it hold: <b>{repair.change}</b>. Interlock proved the rule then holds on every route{(() => {
+            // every cost of the change, not only the first
+            const costs = [repair.lost.length && `${repair.lost.join(', ')} could no longer be reached`, repair.stranded.length && `work in ${repair.stranded.join(', ')} would have no way to finish`, repair.adds?.length && `it would bring ${repair.adds.join('; ')}`].filter(Boolean);
+            return costs.length ? `, but ${costs.join(', and ')}` : ', and every status stays reachable and can still finish, with no new problem';
+          })()}. Change it in the workflow editor if the team agrees.</p>}
           {broken && !repair && <p className="il-repair">No single change to one step makes it hold: Interlock tried removing or redirecting each step of the route, and every time either another route still skips {name(model, r.via)} or {name(model, r.target)} could no longer be reached at all.</p>}
           </div>
         );

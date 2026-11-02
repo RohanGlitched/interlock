@@ -84,14 +84,22 @@ export async function loadSite({ asApp = false, fresh = false, budgetMs = 0 } = 
   const screens = { ...known };
   const screenErrors = [], unreadable = [], pending = [];
   await Promise.all([
-    pool(classic, 10, async (p) => {
-      const r = await call(route`/rest/api/3/workflowscheme/project?projectId=${p.id}`).catch(() => null);
-      const scheme = r?.values?.[0]?.workflowScheme;
-      if (!scheme) return;
-      schemes[p.id] = scheme.issueTypeMappings || {};
-      const add = (name, issueType) => { (usage[name] ||= []).push({ project: p.key, projectId: p.id, issueType }); };
-      if (scheme.defaultWorkflow) add(scheme.defaultWorkflow, null);
-      for (const [issueType, name] of Object.entries(scheme.issueTypeMappings || {})) add(name, issueType);
+    // (a hundred projects per call: a site with a thousand projects needs ten calls, not a thousand)
+    pool(Array.from({ length: Math.ceil(classic.length / 100) }, (_, k) => classic.slice(k * 100, k * 100 + 100)), 5, async (batch) => {
+      const ids = batch.map((p) => String(p.id)).filter((id) => /^\d+$/.test(id));
+      const r = await call(assumeTrustedRoute(`/rest/api/3/workflowscheme/project?${ids.map((id) => `projectId=${id}`).join('&')}`)).catch(() => null);
+      for (const v of r?.values || []) {
+        const scheme = v.workflowScheme;
+        if (!scheme) continue;
+        for (const pid of v.projectIds || []) {
+          const p = batch.find((x) => String(x.id) === String(pid));
+          if (!p) continue;
+          schemes[p.id] = scheme.issueTypeMappings || {};
+          const add = (name, issueType) => { (usage[name] ||= []).push({ project: p.key, projectId: p.id, issueType }); };
+          if (scheme.defaultWorkflow) add(scheme.defaultWorkflow, null);
+          for (const [issueType, name] of Object.entries(scheme.issueTypeMappings || {})) add(name, issueType);
+        }
+      }
     }),
     pool(screenIds.filter((id) => !(id in known)), 10, async (id) => {
       if (overBudget()) { pending.push(id); return; }
@@ -99,21 +107,24 @@ export async function loadSite({ asApp = false, fresh = false, budgetMs = 0 } = 
       const tabs = await call(route`/rest/api/3/screens/${id}/tabs`).catch((e) => { screenErrors.push(`${id}: ${e.message}`); return null; });
       // a screen Interlock cannot read is assumed to ask for the resolution: it may hide a finding, but it
       // never invents one; the report says how many screens were unreadable
-      if (!tabs) { unreadable.push(id); return; }
+      if (!tabs) { screens[id] = 'unreadable'; return; }
       for (const tab of tabs) {
         const fields = await call(route`/rest/api/3/screens/${id}/tabs/${tab.id}/fields`).catch((e) => { screenErrors.push(`${id}/${tab.id}: ${e.message}`); return null; });
         // a tab that cannot be read makes the whole screen unreadable (never "no resolution", which would invent a finding)
-        if (!fields) { unreadable.push(id); return; }
+        if (!fields) { screens[id] = 'unreadable'; return; }
         if (fields.some((f) => f.id === 'resolution')) { screens[id] = true; return; }
       }
       screens[id] = false;
     }),
   ]);
   // the cache keeps the time of its last full read, so every answer in it is at most 10 minutes old
-  const started = cached?.partial && Object.keys(known).length ? cached.started : Date.now();
-  await kvs.set('cache:screens', pending.length ? { partial: true, started, screens } : { at: Object.keys(known).length && !cached?.partial ? cached.at : Date.now(), screens }).catch(() => {});
+  // (a read finished in parts is as old as its first part)
+  const started = cached?.partial && Object.keys(known).length ? cached.started : t0;
+  await kvs.set('cache:screens', pending.length ? { partial: true, started, screens } : { at: Object.keys(known).length ? (cached.partial ? cached.started : cached.at) : t0, screens }).catch(() => {});
   if (pending.length) return { partial: true, screensRead: screenIds.length - pending.length, screensTotal: screenIds.length };
-  const screenHasResolution = Object.keys(screens).filter((id) => screens[id]);
+  const onSite = new Set(screenIds);
+  unreadable.push(...Object.keys(screens).filter((id) => screens[id] === 'unreadable' && onSite.has(id)));
+  const screenHasResolution = Object.keys(screens).filter((id) => screens[id] === true);
   if (screenErrors.length) console.warn(`Interlock: ${screenErrors.length} screen reads failed`);
   const teamManagedProjects = new Set(projects.filter((p) => p.style === 'next-gen').map((p) => p.id));
   // a team-managed workflow belongs to its one project, so it is used there (no scheme to look up)
@@ -269,7 +280,7 @@ async function reportNew() {
   const now = snapshotKeys(await kvs.get('watch:snapshot')).filter((f) => !intended[f.k]);
   const reported = new Set((await kvs.get('watch:reported').catch(() => null)) || []);
   const fresh = now.filter((f) => !reported.has(f.k));
-  if (!fresh.length) { await kvs.set('watch:reported', now.map((f) => f.k)); return; }
+  if (!fresh.length) { await kvs.set('watch:reported', now.map((f) => f.k)); if ((await kvs.get('watch:notified'))?.error) await kvs.delete('watch:notified'); return; }
   const day = new Date().toISOString().slice(0, 10);
   try { await kvs.set(`watch:report:${day}`, fresh.length, { keyPolicy: 'FAIL_IF_EXISTS', ttl: { value: 2, unit: 'DAYS' } }); }
   catch (e) { return; } // today's report was already made (or is being made)
@@ -310,6 +321,7 @@ resolver.define('setWatchNotify', async (req) => {
   // what the last proof already shows is known to whoever turns this on: reports start with what is new from here
   await kvs.set('watch:reported', snapshotKeys(await kvs.get('watch:snapshot')).map((f) => f.k));
   await kvs.set('watch:notify', notify);
+  await kvs.delete('watch:notified').catch(() => {});
   return { notify };
 });
 
@@ -774,6 +786,7 @@ const AGENT_BUDGET_MS = 18000;
 const TOO_SLOW = Symbol('too slow');
 const inTime = (p) => Promise.race([p.then((x) => (x?.partial ? TOO_SLOW : x)), new Promise((r) => setTimeout(() => r(TOO_SLOW), AGENT_BUDGET_MS))]);
 async function fromLastProof() {
+  await requireAdmin();
   const [last, snap] = await Promise.all([kvs.get('watch:last').catch(() => null), kvs.get('watch:snapshot').catch(() => null)]);
   if (!last || !snap) return { error: 'This site took too long to read in one answer, and no saved proof exists yet. Open Interlock (Jira settings, Apps) once to prove it, then ask again.' };
   const rows = Object.values(snap).map((w) => ({ workflow: w.name, findings: w.findings.filter((f) => !f.rule).map((f) => ({ problem: f.title, status: f.subject })) })).filter((w) => w.findings.length);
@@ -830,7 +843,7 @@ async function proveRouteInner(payload) {
   // `ruleHolds` is about the rule "every route to target passes through"; the answer sentence states the
   // finding plainly so it reads right whichever way the user phrased the question.
   return f
-    ? { ruleHolds: false, canSkip: true, answer: `Work CAN reach ${payload.target} without passing ${payload.through}. The rule "${payload.target} only through ${payload.through}" is broken by this route.`, counterexample: brief(f).route, smallestFix: ruleRepairs(model, { target, via }, 1).map((x) => `${x.change} (proved: the rule then holds on every route${x.lost.length ? `; ${x.lost.join(', ')} would no longer be reachable` : ''}${x.stranded.length ? `; work in ${x.stranded.join(', ')} would have no way to finish` : ''}${x.adds.length ? `; it would bring ${x.adds.join('; ')}` : ''})`)[0] }
+    ? { ruleHolds: false, canSkip: true, answer: `Work CAN reach ${payload.target} without passing ${payload.through}. The rule "${payload.target} only through ${payload.through}" is broken by this route.`, counterexample: brief(f).route, smallestFix: ruleRepairs(model, { target, via }, 1, ((await kvs.get('rules').catch(() => null)) || {})[w.id]?.filter((x) => x.target !== target || x.via !== via) || []).map((x) => `${x.change} (proved: the rule then holds on every route${x.lost.length ? `; ${x.lost.join(', ')} would no longer be reachable` : ''}${x.stranded.length ? `; work in ${x.stranded.join(', ')} would have no way to finish` : ''}${x.adds.length ? `; it would bring ${x.adds.join('; ')}` : ''})`)[0] }
     : { ruleHolds: true, canSkip: false, answer: `Work can NOT reach ${payload.target} without passing ${payload.through}: every route to ${payload.target} goes through ${payload.through} (for a done status, again after finished work is reopened). Interlock searched every route from creation.` };
 }
 

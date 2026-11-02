@@ -340,14 +340,16 @@ export function ruleVerdict(model, { target, via }) {
 // "from any status" transition is also tried as one from the required status only), and the rule is checked again
 // over every route. A repair that leaves a status unreachable is listed after those that keep every status reachable.
 // Interlock suggests, it does not apply: restricting who can move work is the team's call.
-export function ruleRepairs(model, rule, max = 3) {
+// others: the workflow's other saved rules; a repair that would break one of them says so.
+export function ruleRepairs(model, rule, max = 3, others = []) {
   const v = ruleVerdict(model, rule);
   if (v.verdict !== 'broken') return [];
   const name = new Map(model.statuses.map((s) => [s.id, s.name]));
   const reached = (m) => new Set([...explore(m).values()].map((n) => n.s));
   const stuck = (m) => new Set(check(m).filter((f) => f.property === 'stranded').map((f) => f.status ?? f.subject));
   // every other problem the change would bring (a step sent elsewhere can carry a resolution into an open status)
-  const problems = (m) => new Map(check(m).filter((f) => f.property !== 'stranded' && f.property !== 'unreachable').map((f) => [`${f.property}|${f.subject}`, `${f.title.toLowerCase()} (${f.subject})`]));
+  const problems = (m) => new Map(check(m, { mustPass: others }).filter((f) => f.property !== 'stranded' && f.property !== 'unreachable')
+    .map((f) => [`${f.property}|${f.subject}`, f.property === 'mustPass' ? `a broken rule (${f.subject})` : `${f.title.toLowerCase()} (${f.subject})`]));
   const before = reached(model), stuckBefore = stuck(model), problemsBefore = problems(model);
   // any single change that makes the rule hold must cut the route that breaks it, so only that route's steps are tried
   const onRoute = new Set((v.route?.hops || []).map((h) => `${h.transitionId}|${h.from}`));
