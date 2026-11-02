@@ -1,7 +1,7 @@
 import Resolver from '@forge/resolver';
 import api, { route, assumeTrustedRoute } from '@forge/api';
 import { kvs } from '@forge/kvs';
-import { verify, buildModel, reopenSteps, ruleVerdict } from '../engine/interlock.mjs';
+import { verify, buildModel, reopenSteps, ruleVerdict, PROPERTIES } from '../engine/interlock.mjs';
 import { resolutionFor } from '../engine/resolution.mjs';
 import { waysOf } from '../engine/trace.mjs';
 
@@ -48,8 +48,11 @@ async function pool(items, n, fn) { // run fn over items, n at a time
 }
 
 // Everything the checker needs, in one pass over the site's configuration.
-export async function loadSite({ asApp = false, fresh = false } = {}) {
+// budgetMs: on a site with many transition screens, stop reading screens after this long and say how far it got;
+// what was read is cached, so the next call carries on from there (a resolver call has 25 seconds).
+export async function loadSite({ asApp = false, fresh = false, budgetMs = 0 } = {}) {
   const call = asApp ? jiraApp : jira;
+  const t0 = Date.now(), overBudget = () => budgetMs && Date.now() - t0 > budgetMs;
   const pages = async (path, take) => { // follow startAt paging until the last page
     for (let startAt = 0; ;) {
       const page = await call(path(startAt));
@@ -75,7 +78,7 @@ export async function loadSite({ asApp = false, fresh = false } = {}) {
   const cached = fresh ? null : await kvs.get('cache:screens').catch(() => null);
   const known = cached && Date.now() - cached.at < 10 * 60e3 ? cached.screens : {};
   const screens = { ...known };
-  const screenErrors = [], unreadable = [];
+  const screenErrors = [], unreadable = [], pending = [];
   await Promise.all([
     pool(classic, 10, async (p) => {
       const r = await call(route`/rest/api/3/workflowscheme/project?projectId=${p.id}`).catch(() => null);
@@ -87,6 +90,7 @@ export async function loadSite({ asApp = false, fresh = false } = {}) {
       for (const [issueType, name] of Object.entries(scheme.issueTypeMappings || {})) add(name, issueType);
     }),
     pool(screenIds.filter((id) => !(id in known)), 10, async (id) => {
+      if (overBudget()) { pending.push(id); return; }
       const tabs = await call(route`/rest/api/3/screens/${id}/tabs`).catch((e) => { screenErrors.push(`${id}: ${e.message}`); return null; });
       // a screen Interlock cannot read is assumed to ask for the resolution: it may hide a finding, but it
       // never invents one; the report says how many screens were unreadable
@@ -102,6 +106,7 @@ export async function loadSite({ asApp = false, fresh = false } = {}) {
   ]);
   // the cache keeps the time of its last full read, so every answer in it is at most 10 minutes old
   await kvs.set('cache:screens', { at: Object.keys(known).length ? cached.at : Date.now(), screens }).catch(() => {});
+  if (pending.length) return { partial: true, screensRead: screenIds.length - pending.length, screensTotal: screenIds.length };
   const screenHasResolution = Object.keys(screens).filter((id) => screens[id]);
   if (screenErrors.length) console.warn(`Interlock: ${screenErrors.length} screen reads failed`);
   const teamManagedProjects = new Set(projects.filter((p) => p.style === 'next-gen').map((p) => p.id));
@@ -290,6 +295,7 @@ resolver.define('saveRules', async (req) => {
 resolver.define('markIntended', async (req) => {
   await requireAdmin();
   const { workflowId, property, subject, reason, undo } = req.payload;
+  if (!(property in PROPERTIES) || String(workflowId || '').length > 100 || String(subject || '').length > 300) throw new Error('That finding is not one Interlock reported.');
   const all = (await kvs.get('intended')) || {};
   const k = intendedKey(workflowId, property, subject);
   if (undo) delete all[k];
@@ -297,6 +303,7 @@ resolver.define('markIntended', async (req) => {
     const me = await jira(route`/rest/api/3/myself`);
     all[k] = { by: me.displayName, byId: me.accountId, at: new Date().toISOString(), reason: String(reason || '').slice(0, 300) };
   }
+  if (Buffer.byteLength(JSON.stringify(all)) > 200000) throw new Error('Too many findings are recorded as intended to keep another; remove some first.');
   await kvs.set('intended', all);
   return { intended: all };
 });
@@ -308,7 +315,8 @@ resolver.define('watchStatus', async () => {
 
 resolver.define('checkSite', async (req) => {
   await requireAdmin();
-  const site = await loadSite({ fresh: !!req.payload?.fresh });
+  const site = await loadSite({ fresh: !!req.payload?.fresh, budgetMs: 15000 });
+  if (site.partial) return site; // the page asks again; the screens read so far are cached
   // the proof comes back first; live counts follow in a second call (measureSite) so the page paints fast
   // the team's own rules ("Done only through Code Review") are kept in app storage, so the page and the
   // daily watch prove the same thing
@@ -337,7 +345,8 @@ resolver.define('checkSite', async (req) => {
 // Count the work items already in each bad state, for the workflows that have resolution findings.
 resolver.define('measureSite', async (req) => {
   await requireAdmin();
-  const site = await loadSite();
+  const site = await loadSite({ budgetMs: 15000 });
+  if (site.partial) return {};
   const report = await measure(site, checkSite(site));
   return Object.fromEntries(report.results.filter((r) => r.observed || r.observedError).map((r) => [r.workflow.id, { observed: r.observed, observedError: r.observedError }]));
 });
@@ -636,8 +645,13 @@ resolver.define('fix', async (req) => {
   const validation = await jira(route`/rest/api/3/workflows/update/validation`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ payload: update }) });
   if (validation.errors?.length) return { changed, resolutionName, caveats, valid: false, errors: validation.errors.map((e) => e.message || JSON.stringify(e)) };
   if (mode !== 'apply' && mode !== 'undo') return { changed, resolutionName, caveats, valid: true };
-  await jira(route`/rest/api/3/workflows/update`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(update) });
   const k = fixKey(workflowId, property, status);
+  // the Undo record is written before the workflow changes, so a failure afterwards can never leave a fix with no way back
+  if (mode === 'apply') {
+    const sent = Object.fromEntries(wf.transitions.filter((t) => t.id in before).map((t) => [t.id, t.actions || []]));
+    await kvs.set('fixes', { ...fixes, [k]: { workflowId, property, status, statusName: st.find((s) => s.id === status)?.name, before, after: sent, transitions: changed, at: new Date().toISOString(), name: wf.name } });
+  }
+  await jira(route`/rest/api/3/workflows/update`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(update) });
   if (mode === 'undo') delete fixes[k];
   else {
     // what Jira actually saved (read back), so a later Undo compares like with like
@@ -694,7 +708,7 @@ async function agentReport(site) {
 // and the answer says when that proof ran; a single-workflow question asks again once the screens are cached.
 const AGENT_BUDGET_MS = 18000;
 const TOO_SLOW = Symbol('too slow');
-const inTime = (p) => Promise.race([p, new Promise((r) => setTimeout(() => r(TOO_SLOW), AGENT_BUDGET_MS))]);
+const inTime = (p) => Promise.race([p.then((x) => (x?.partial ? TOO_SLOW : x)), new Promise((r) => setTimeout(() => r(TOO_SLOW), AGENT_BUDGET_MS))]);
 async function fromLastProof() {
   const [last, snap] = await Promise.all([kvs.get('watch:last').catch(() => null), kvs.get('watch:snapshot').catch(() => null)]);
   if (!last || !snap) return { error: 'This site took too long to read in one answer, and no saved proof exists yet. Open Interlock (Jira settings, Apps) once to prove it, then ask again.' };
@@ -704,7 +718,7 @@ async function fromLastProof() {
 const slowAnswer = { error: 'This site took too long to read in one answer. Ask again in a minute: the transition screens are cached by then, so the second read is faster.' };
 
 async function checkWorkflowsInner(payload) {
-  const site = await inTime(loadSite());
+  const site = await inTime(loadSite({ budgetMs: 12000 }));
   if (site === TOO_SLOW) return payload?.projectKey ? slowAnswer : fromLastProof();
   const report = await agentReport(site);
   const project = payload?.projectKey && String(payload.projectKey).toUpperCase();
@@ -725,7 +739,7 @@ async function checkWorkflowsInner(payload) {
 }
 
 async function getWorkflowFindingsInner(payload) {
-  const site = await inTime(loadSite());
+  const site = await inTime(loadSite({ budgetMs: 12000 }));
   if (site === TOO_SLOW) return slowAnswer;
   const w = findWorkflow(site, payload?.workflow);
   if (!w) return { error: `No single workflow matches "${payload?.workflow}". Give its full name${candidates(site, payload?.workflow)}.` };
@@ -735,7 +749,7 @@ async function getWorkflowFindingsInner(payload) {
 
 // "Can work reach <target> without passing <through>?" answered for every route, not a sample.
 async function proveRouteInner(payload) {
-  const site = await inTime(loadSite());
+  const site = await inTime(loadSite({ budgetMs: 12000 }));
   if (site === TOO_SLOW) return slowAnswer;
   const w = findWorkflow(site, payload?.workflow);
   if (!w) return { error: `No single workflow matches "${payload?.workflow}"${candidates(site, payload?.workflow)}. Give its full name.` };

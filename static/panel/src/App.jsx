@@ -25,9 +25,20 @@ export default function App() {
   const [openGroups, setOpenGroups] = useState({});
   const [touched, setTouched] = useState(false);
 
+  // a large site is read in parts: each call reads screens for up to 15 seconds and caches them, and the page asks
+  // again until the proof is complete
+  const [progress, setProgress] = useState(null);
+  const prove = async (payload) => {
+    for (let k = 0; k < 20; k++) {
+      const r = await invoke('checkSite', k ? {} : payload);
+      if (!r?.partial) { setProgress(null); return r; }
+      setProgress(r);
+    }
+    throw new Error('This site has more transition screens than Interlock could read in five minutes.');
+  };
   const run = (fresh = false) => {
     setReport(null); setError(null); setFrozen(null); setTouched(false); setRankedWithCounts(false); setFocus(null); setNotice(null);
-    invoke('checkSite', { fresh }).then((r) => {
+    prove({ fresh }).then((r) => {
       setReport(r);
       setMeasuring(true);
       setCountFailed(false);
@@ -55,7 +66,7 @@ export default function App() {
     // the notice comes first: a change already saved in Jira is reported even if proving the site again fails
     setNotice(msg ? { msg, undo } : null);
     let r;
-    try { r = await invoke('checkSite', {}); }
+    try { r = await prove({}); }
     catch (e) { setNotice({ msg: `${msg || ''} Proving the site again failed (${e.message || e}); select Check again.`, undo, error: true }); return; }
     setReport(r); setFocus(null);
     setMeasuring(true);
@@ -112,8 +123,8 @@ export default function App() {
     else if (counted && !rankedWithCounts && !touched) { setFrozen(order()); setRankedWithCounts(true); }
   }, [results, frozen, counted, touched, rankedWithCounts]);
 
-  if (error) return <div className="il-empty"><h1>Interlock could not read this site's workflows</h1><p>{error}</p><p>Interlock needs a Jira administrator to open it, because workflows are site configuration.</p><button className="il-btn" onClick={() => run(true)}>Check again</button></div>;
-  if (!report) return <Boot />;
+  if (error) return <div className="il-empty"><h1>Interlock could not read this site's workflows</h1><p>{error}</p>{/\b(401|403)\b|administrator/i.test(error) ? <p>Interlock needs a Jira administrator to open it, because workflows are site configuration.</p> : <p>Jira did not answer in time or reported an error. Check again in a minute: what was read is kept for ten minutes.</p>}<button className="il-btn" onClick={() => run(true)}>Check again</button></div>;
+  if (!report) return <Boot progress={progress} />;
 
   if (!results.length) return <div className="il-empty"><h1>No workflows to check</h1><p>Jira returned no workflows for this site. Interlock checks company-managed and team-managed workflows that a Jira administrator can read.</p><button className="il-btn" onClick={() => run(true)}>Check again</button></div>;
   const sel = results.find((r) => r.workflow.id === selId) || results[0];
@@ -260,11 +271,11 @@ function summarise(results) {
   };
 }
 
-function Boot() {
+function Boot({ progress = null }) {
   return (
     <div className="il-boot" role="status">
       <div className="il-boot-track">{[0, 1, 2, 3, 4].map((i) => <Lamp key={i} state="amber" style={{ animationDelay: `${i * 0.18}s` }} />)}</div>
-      <p>Reading every workflow, status and transition screen on this site…</p>
+      <p>{progress ? `A large site: ${progress.screensRead} of ${progress.screensTotal} transition screens read so far…` : 'Reading every workflow, status and transition screen on this site…'}</p>
     </div>
   );
 }

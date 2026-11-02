@@ -108,7 +108,12 @@ forge install
 ```
 manifest.yml            global page, Rovo agent, actions, MCP server
 engine/interlock.mjs    the model checker
-src/index.js            site loading, live counts, replay, fix, demo project, Rovo actions
-static/panel/src/       the signal-box page (React): layout, track diagram, interlocking table
+engine/resolution.mjs   which resolution a transition sets
+engine/trace.mjs        "How did they get there?": reads the history of work items in a bad state
+src/index.js            site loading, live counts, replay, fix, demo project, daily watch, Rovo actions
+static/panel/src/       the signal-box page (React): track diagram (layout.js), interlocking table
 skills/interlock/       agent skill for the MCP server
+test/                   engine tests and the layout test (npm test)
+tools/public-trace.mjs  the public-Jira study (docs/public-jira.md)
+docs/                   public-Jira evidence, template report, cover
 ```
