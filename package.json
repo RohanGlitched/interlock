@@ -14,6 +14,6 @@
     "@forge/resolver": "^2.0.2"
   },
   "scripts": {
-    "test": "node --test test/engine.test.mjs test/layout.test.mjs && node --import ./test/forge/register.mjs --test test/resolvers.test.mjs"
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test test/engine.test.mjs test/layout.test.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./test/forge/register.mjs --test test/resolvers.test.mjs"
   }
 }

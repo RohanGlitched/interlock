@@ -792,6 +792,7 @@ function Rules({ model, rules, setRules, findings = [], onShow }) {
   // each rule's verdict, from the proof; a rule just added lights its broken route at once
   const brokenBy = (r) => findings.find((f) => f.property === 'mustPass' && String(f.rule?.target) === String(r.target) && String(f.rule?.via) === String(r.via));
   const [justAdded, setJustAdded] = useState(null);
+  const [deleted, setDeleted] = useState(null); // the rule just deleted, so it can be put back
   useEffect(() => { if (!justAdded) return; const f = brokenBy(justAdded); if (f) onShow?.(f); setJustAdded(null); }, [findings, justAdded]); // eslint-disable-line react-hooks/exhaustive-deps
   const done = model.statuses.filter((s) => s.category === 'DONE');
   // the smallest repair of each broken rule, worked out once per workflow and rule (it proves every candidate)
@@ -816,7 +817,7 @@ function Rules({ model, rules, setRules, findings = [], onShow }) {
           <div key={i}><p className="il-rule"><Lamp state={f || v.verdict === 'broken' ? 'red' : v.verdict === 'undecided' ? 'amber' : 'green'} /> Work reaches <b>{name(model, r.target)}</b> only through <b>{name(model, r.via)}</b>:{' '}
             {f ? <><b className="il-live">broken</b> <button className="il-link" onClick={() => onShow?.(f)}>Show the route</button></>
               : v.verdict === 'undecided' ? <b>cannot say: {v.reason}</b> : <b>holds on every route</b>}{' '}
-            <span className="il-sep" aria-hidden="true">·</span> <button className="il-link" onClick={() => setRules(rules.filter((_, j) => j !== i))}>Delete rule</button></p>
+            <span className="il-sep" aria-hidden="true">·</span> <button className="il-link" onClick={() => { setDeleted({ rule: r, at: i }); setRules(rules.filter((_, j) => j !== i)); }}>Delete rule</button></p>
           {repair && <p className="il-repair">Smallest change that makes it hold: <b>{repair.change}</b>. Interlock proved the rule then holds on every route{(() => {
             // every cost of the change, not only the first
             const costs = [repair.lost.length && `${repair.lost.join(', ')} could no longer be reached`, repair.stranded.length && `work in ${repair.stranded.join(', ')} would have no way to finish`, repair.adds?.length && `it would bring ${repair.adds.join('; ')}`].filter(Boolean);
@@ -826,6 +827,10 @@ function Rules({ model, rules, setRules, findings = [], onShow }) {
           </div>
         );
       })}
+      {deleted && !rules.some((x) => x.target === deleted.rule.target && x.via === deleted.rule.via) && (
+        <p className="il-note" role="status">Rule deleted: work reaches {name(model, deleted.rule.target)} only through {name(model, deleted.rule.via)}.{' '}
+          <button className="il-link" onClick={() => { setRules([...rules.slice(0, deleted.at), deleted.rule, ...rules.slice(deleted.at)]); setDeleted(null); }}>Undo</button></p>
+      )}
       <div className="il-rule-form">
         <span>Work reaches</span>
         <select value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Target status">
