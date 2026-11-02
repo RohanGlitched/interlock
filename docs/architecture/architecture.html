@@ -52,7 +52,7 @@ body { width: 1200px; font-family: Overpass, sans-serif; color: var(--text); pad
       </ul>
       <p style="font-size:13.5px">Read through Jira's REST API as the admin; daily, as the app.</p>
     </div>
-    <div class="not">Not modelled: automation rules and other apps' validators. Replay is how a route is confirmed in a real Jira.</div>
+    <div class="not">Not modelled: automation rules, transition validators, and other apps' post-functions. Replay is how a route is confirmed in a real Jira.</div>
   </div>
   <div class="arrow"><svg width="30" height="20"><path d="M2 10 H24" stroke="#c9d1c9" stroke-width="2.4"/><path d="M20 4 L28 10 L20 16 z" fill="#c9d1c9"/></svg></div>
   <div class="box">
@@ -87,7 +87,7 @@ body { width: 1200px; font-family: Overpass, sans-serif; color: var(--text); pad
     <div class="down"><svg width="16" height="16"><path d="M8 0 V10" stroke="#c9d1c9" stroke-width="2"/><path d="M3 8 L8 15 L13 8 z" fill="#c9d1c9"/></svg></div>
     <div class="rung"><h4><span class="lamp r"></span>Replayed</h4><p>A new work item walks the route; a second look after automation runs.</p></div>
     <div class="down"><svg width="16" height="16"><path d="M8 0 V10" stroke="#c9d1c9" stroke-width="2"/><path d="M3 8 L8 15 L13 8 z" fill="#c9d1c9"/></svg></div>
-    <div class="rung fix"><h4>Fix at the cause</h4><p>Jira validates the change, an admin applies it, the site is proved again. Undo restores it.</p></div>
+    <div class="rung fix"><h4>Fix at the cause <span style="font-weight:400;color:var(--muted);font-size:13px;margin-left:6px">resolution findings</span></h4><p>Jira validates the change, an admin applies it, the site is proved again. Undo restores it.</p></div>
   </div>
 </div>
 

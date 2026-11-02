@@ -2,13 +2,13 @@
 
 # Interlock
 
-A Jira workflow is a small program. Teams rely on it for promises such as *"nothing is done without code review"*, *"done work is resolved"* and *"nothing gets stuck"*, and Jira itself never checks those promises. A global transition added for a hotfix, a status copied from another project, or a transition screen without the Resolution field quietly breaks them. Dashboards then count finished work as unresolved, or reopened work as resolved, and release reports are wrong.
+A Jira workflow is a small program. Teams rely on it for promises such as *"nothing is done without code review"*, *"done work is resolved"* and *"nothing gets stuck"*, and Jira itself never checks those promises. A global transition added for a hotfix, a status copied from another project, or a transition screen without the Resolution field quietly breaks them. Dashboards then count finished work as unresolved, or reopened work as resolved, and every filter, gadget and report that runs on the resolution is wrong.
 
 Railway signal boxes solved this a century ago with interlocking: the frame physically prevents a lever combination that would set conflicting routes. Interlock brings the same idea to Jira. Instead of testing a few example work items, it works through every situation a work item can ever be in, meaning each status combined with whether the resolution is set, and checks each promise against all of them. That kind of exhaustive check is called model checking.
 
 It is for Jira administrators and the teams who rely on Jira's numbers: service desks reporting SLAs and change volumes, software teams with review rules, anyone whose release report counts resolved work.
 
-![Interlock: selecting a workflow lights its bad route, and a train runs along it](docs/media/interlock-routes.gif)
+![Interlock lights a bad route in two service-management workflows: a cancelled request left unresolved, and a post-incident review published without approval](docs/media/interlock-routes.gif)
 
 ## What it finds
 
@@ -30,14 +30,21 @@ Each finding comes with the shortest route that breaks the property, from creati
 A proof says what *can* happen. Interlock then takes each finding as far as it can go:
 
 1. **Proved.** The model checker found the route.
-2. **In your data.** For resolution findings, Interlock counts the work items in the projects using that workflow that are already in the bad state, using Jira's own search. On an Atlassian demo site on Nov 1, 2026, before we added anything, 29 of its 97 workflows had routes that go wrong and 78 work items in its sample projects were already in a wrong state. (Today the same site, with our own Ship and TPL projects added, has 104 workflows, 30 with findings and 85 work items wrong.) The count is split by status, so each finding shows its own items, and **How did they get there?** reads the history of up to 50 of them and counts the step that put each one there: on the procurement project, 46 of the 50 most recently changed came Accepted → Purchased with the resolution left as it was, the very step the proof flagged (once that step is fixed, the page says the items already there are left over from before). Items created or imported in that state, and steps with no author (migrations, scripts), are counted apart, not blamed on a route.
+2. **In your data.** For resolution findings, Interlock counts the work items in the projects using that workflow that are already in the bad state, using Jira's own search. On an Atlassian demo site on Nov 2, 2026, 30 of its 104 workflows had routes that go wrong and 85 work items were already in a wrong state. Those counts include our own Ship demo project and one project made from today's service template; as Atlassian provisioned the site on Nov 1, they were 29 of 97 workflows and 78 work items. The count is split by status, so each finding shows its own items, and **How did they get there?** reads the history of up to 50 of them and counts the step that put each one there: on the procurement project, 46 of the 50 most recently changed came Accepted → Purchased with the resolution left as it was, the very step the proof flagged (once that step is fixed, the page says the items already there are left over from before). Items created or imported in that state, and steps with no author (migrations, scripts), are counted apart, not blamed on a route.
 3. **Replayed.** One click creates a new work item and walks it down the route through Jira's transitions API, filling in each transition screen the way a person would. It reads back the status and resolution after every step, and once more a few seconds after the last one, so an automation rule that repairs the resolution shows up and the route is reported safe.
 
-Then **fix at the cause**: for resolution findings, Interlock adds *Set resolution* or *Clear resolution* to the transitions involved. Jira validates the change first, and Interlock saves it only when an admin clicks Apply. The whole site is then proved again. The workflow's card names every project that uses it, because a fix reaches all of them.
+Then **fix at the cause**: for resolution findings, Interlock adds *Set resolution* or *Clear resolution* to the transitions involved. Jira validates the change first, and Interlock saves it only when an admin clicks Apply. The whole site is then proved again. The workflow's card names every project that uses it, because a fix reaches all of them. Undo puts back exactly what was there, and refuses if someone has edited those transitions since.
 
-On that demo site (before we added our own Ship and TPL projects), 13 of the 29 workflows with findings are copies of Jira Service Management template workflows; the Change Management workflow has six copies (five in use) with the same five findings, and one was confirmed on a real work item: a declined change sent back to Review stays resolved as Declined. A project created from the same template today does not have that route, so these copies come from an earlier version of the template or were edited after they were made. Either way, nothing in Jira tells an admin which workflows still carry such routes; Interlock does. The full list is in [Resolution defects in template-made workflows](docs/atlassian-templates.md).
+On that demo site as Atlassian provisioned it, 13 of the 29 workflows with findings are copies of Jira Service Management template workflows; the Change Management workflow has six copies (five in use) with the same five resolution findings (the ENGS copy has a sixth, done without approval), and one was confirmed on a real work item: a declined change sent back to Review stays resolved as Declined. A project created from the same template today does not have that route, so these copies come from an earlier version of the template or were edited after they were made. Either way, nothing in Jira tells an admin which workflows still carry such routes; Interlock does. The full list is in [Resolution defects in template-made workflows](docs/atlassian-templates.md).
 
-**On public Jira sites** the same counts are visible to anyone: 1,844 done-but-unresolved and 1,239 open-but-resolved items on Apache's Jira, 1,092 done-but-unresolved on Atlassian's own public tracker, and zero on OpenJDK's. Their public history shows how they got there: on Apache, 759 of the done-but-unresolved items were moved there by 114 different people on 348 days, through transitions that never set a resolution (MXNET's In Review → Done alone, 204 times). We also say which clusters were one-off bulk or system changes rather than routes. See [Resolution defects on public Jira sites](docs/public-jira.md).
+**On public Jira sites** anyone can count these, and read the history the way **How did they get there?** does:
+
+- **Apache:** 1,844 done but unresolved and 1,239 open but resolved. 759 of the 1,844 were moved there by 114 different people through transitions that never set a resolution (MXNET In Review → Done, 204 times; HUDI Open → Resolved, 155). Nearly all the rest were created or imported already in that state, so no route is to blame for them.
+- **What it does to reports:** in HUDI, an active project, 348 of the 3,401 items its filters call unresolved are finished work (10%). In MXNET, now retired, it was 333 of 1,093 (30%).
+- **OpenJDK:** zero, so it can be done.
+- **Not routes, and we say so:** on Atlassian's public tracker, 1,065 of its 1,092 done-but-unresolved items were one Sourcetree bulk close in 2019; 379 of Lucene's 380 open-but-resolved items changed with no author, after its move to GitHub.
+
+Details and a script to rerun it: [Resolution defects on public Jira sites](docs/public-jira.md).
 
 ## In Jira
 
@@ -58,7 +65,7 @@ On any site without it, **Add the Ship demo project** builds a seeded demo: a de
 
 ![How Interlock proves, shows and fixes a workflow](docs/architecture/architecture.png)
 
-**What the proof covers:** statuses, directed and global transitions, resolution post-functions, transition screens, condition trees (a condition that depends on who is asking counts as passable unless it allows no one) and approval steps. Automation rules and other apps' validators are not in the proof; Replay catches them, because it looks again after automation has run, and an admin can mark any route as intended.
+**What the proof covers:** statuses, directed and global transitions, resolution post-functions, transition screens, condition trees (a condition that depends on who is asking counts as passable unless it allows no one) and approval steps. Automation rules, transition validators (Jira's own and other apps') and other apps' post-functions (ScriptRunner, JMWE and the like) are not in the proof, so a route another app already repairs can still show as a finding. Replay settles it, because it walks the route through Jira and looks again after automation has run, and an admin can mark any route as intended.
 
 
 - `engine/interlock.mjs` builds a model from `GET /rest/api/3/workflows/search` with transitions expanded:
@@ -110,7 +117,7 @@ forge deploy
 forge install
 ```
 
-`npm run dev` in `static/panel` runs the page in a plain browser against `static/panel/dev/site.json`, a saved copy of a site's workflow search response (not in this repository: save your own). Such a copy has no transition screens, so it shows more findings (81 of 97) than the live site (29), where screens that ask for a resolution clear many of them.
+`npm run dev` in `static/panel` runs the page in a plain browser against `static/panel/dev/site.json`, a saved copy of a site's workflow search response (not in this repository: save your own). Such a copy has no transition screens, so it shows more findings (81 of 97) than the live site did on the same day (29, Nov 1 snapshot), where screens that ask for a resolution clear many of them.
 
 ## Layout
 
